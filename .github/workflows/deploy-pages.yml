@@ -28,7 +28,7 @@ jobs:
       - run: npm run build:pages
         env:
           GITHUB_PAGES: "true"
-          NEXT_PUBLIC_API_BASE_URL: "__BACKEND_URL__"
+          NEXT_PUBLIC_API_BASE_URL: "https://mistopis-ai-pruvodce.blovak.chatgpt.site"
           NEXT_TELEMETRY_DISABLED: "1"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
