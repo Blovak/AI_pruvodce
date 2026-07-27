@@ -29,6 +29,9 @@ import { getSessionHeaders } from "@/lib/session";
 
 type Status = "idle" | "locating" | "loading" | "ready" | "error";
 
+const silentAudio =
+  "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+
 export function GuideApp() {
   const [place, setPlace] = useState<Place | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
@@ -38,12 +41,17 @@ export function GuideApp() {
   const [question, setQuestion] = useState("");
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [showNativeAudio, setShowNativeAudio] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
-      audioRef.current?.pause();
+      const audio = audioRef.current;
+      audio?.pause();
+      audio?.removeAttribute("src");
+      audio?.load();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
   }, []);
@@ -128,9 +136,13 @@ export function GuideApp() {
   }
 
   function stopAudio() {
-    audioRef.current?.pause();
-    audioRef.current = null;
+    const audio = audioRef.current;
+    audio?.pause();
+    audio?.removeAttribute("src");
+    audio?.load();
     setAudioPlaying(false);
+    setAudioReady(false);
+    setShowNativeAudio(false);
     if (audioUrlRef.current) {
       URL.revokeObjectURL(audioUrlRef.current);
       audioUrlRef.current = null;
@@ -138,20 +150,50 @@ export function GuideApp() {
   }
 
   async function toggleAudio() {
-    if (audioRef.current) {
+    const audio = audioRef.current;
+    if (!audio) {
+      setMessage("Přehrávač se nepodařilo připravit.");
+      return;
+    }
+
+    if (audioReady) {
       if (audioPlaying) {
-        audioRef.current.pause();
+        audio.pause();
         setAudioPlaying(false);
       } else {
-        await audioRef.current.play();
-        setAudioPlaying(true);
+        try {
+          await audio.play();
+          setAudioPlaying(true);
+        } catch {
+          setShowNativeAudio(true);
+          setMessage(
+            "Safari čeká na ruční spuštění. Použijte ovládání přehrávače pod tlačítkem.",
+          );
+        }
       }
       return;
     }
 
     setAudioLoading(true);
     setMessage("");
+    setShowNativeAudio(false);
     try {
+      // Safari na iOS povoluje zvuk pro konkrétní media element pouze v přímé
+      // reakci na gesto. Krátké ticho odemkne stále stejný element ještě před
+      // dlouhým požadavkem na vytvoření hlasu.
+      audio.muted = true;
+      audio.src = silentAudio;
+      audio.load();
+      try {
+        await audio.play();
+      } catch {
+        // Některé verze Safari tichý zdroj odmítnou. Po vytvoření audia proto
+        // nabídneme tentýž element také s nativním ručním ovládáním.
+      }
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = false;
+
       const spokenText = `${guide.placeName}. ${guide.overview} ${guide.story} ${guide.facts
         .map((fact) => `${fact.title}. ${fact.text}`)
         .join(" ")}`;
@@ -168,16 +210,20 @@ export function GuideApp() {
         throw new Error(data.error);
       }
       const url = URL.createObjectURL(await response.blob());
-      const audio = new Audio(url);
-      audioRef.current = audio;
       audioUrlRef.current = url;
-      audio.onended = () => setAudioPlaying(false);
-      audio.onerror = () => {
-        stopAudio();
-        setMessage("Zvuk se nepodařilo přehrát.");
-      };
-      await audio.play();
-      setAudioPlaying(true);
+      audio.src = url;
+      audio.preload = "auto";
+      audio.load();
+      setAudioReady(true);
+      try {
+        await audio.play();
+        setAudioPlaying(true);
+      } catch {
+        setShowNativeAudio(true);
+        setMessage(
+          "Zvuk je připravený. Safari vyžaduje ještě jedno klepnutí na přehrát.",
+        );
+      }
     } catch (reason) {
       setMessage(
         reason instanceof Error ? reason.message : "Zvuk se nepodařilo vytvořit.",
@@ -273,6 +319,18 @@ export function GuideApp() {
                   </span>
                   <Volume2 size={18} />
                 </button>
+                <audio
+                  className={`native-audio${showNativeAudio ? " is-visible" : ""}`}
+                  controls
+                  onEnded={() => setAudioPlaying(false)}
+                  onPause={() => setAudioPlaying(false)}
+                  onPlay={() => {
+                    if (audioReady) setAudioPlaying(true);
+                  }}
+                  playsInline
+                  preload="none"
+                  ref={audioRef}
+                />
 
                 <article className="story">
                   <span className="drop-cap">{guide.story.charAt(0)}</span>

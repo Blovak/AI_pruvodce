@@ -355,6 +355,16 @@ button {
   color: rgba(247, 242, 231, 0.55);
 }
 
+.native-audio {
+  display: none;
+  width: min(100%, 490px);
+  margin-top: 12px;
+}
+
+.native-audio.is-visible {
+  display: block;
+}
+
 .story {
   max-width: 690px;
   margin: 34px 0 36px;
