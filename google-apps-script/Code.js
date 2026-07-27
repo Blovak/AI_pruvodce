@@ -3,7 +3,10 @@ const SHEETS = {
   usage: "Použití",
   errors: "Chyby",
   feedback: "Zpětná vazba",
+  cache: "Místa a MP3",
 };
+
+const CACHE_TTL_YEARS = 1;
 
 const USAGE_HEADERS = [
   "Čas",
@@ -37,6 +40,22 @@ const FEEDBACK_HEADERS = [
   "Poznámka",
 ];
 
+const CACHE_HEADERS = [
+  "Vytvořeno",
+  "Platné do",
+  "Cache klíč",
+  "Latitude",
+  "Longitude",
+  "Místo",
+  "Odpověď AI (JSON)",
+  "MP3 odkaz",
+  "Drive file ID",
+  "Textový model",
+  "Hlasový model",
+  "Poslední použití",
+  "Počet použití",
+];
+
 function setup(logToken, spreadsheetId) {
   const properties = PropertiesService.getScriptProperties();
   const targetId =
@@ -55,6 +74,7 @@ function setup(logToken, spreadsheetId) {
   ensureSheet_(spreadsheet, SHEETS.usage, USAGE_HEADERS, "#e7ede9");
   ensureSheet_(spreadsheet, SHEETS.errors, ERROR_HEADERS, "#f8e8e3");
   ensureSheet_(spreadsheet, SHEETS.feedback, FEEDBACK_HEADERS, "#eee9f5");
+  ensureCacheSheet_(spreadsheet);
   setupOverview_(spreadsheet);
 
   return {
@@ -89,13 +109,295 @@ function doPost(event) {
       return json_({ ok: false, error: "unauthorized" });
     }
 
-    const item = normalizeEvent_(payload.event || {});
-    writeEvent_(item, properties.getProperty("SPREADSHEET_ID"));
-    return json_({ ok: true });
+    const spreadsheetId = properties.getProperty("SPREADSHEET_ID");
+    switch (String(payload.operation || "log")) {
+      case "cacheGet":
+        return json_(cacheGet_(spreadsheetId, payload.cacheKey));
+      case "cacheSaveGuide":
+        return json_(cacheSaveGuide_(spreadsheetId, payload));
+      case "cacheGetAudio":
+        return json_(cacheGetAudio_(spreadsheetId, payload.cacheKey));
+      case "cacheSaveAudio":
+        return json_(cacheSaveAudio_(spreadsheetId, payload));
+      default: {
+        const item = normalizeEvent_(payload.event || {});
+        writeEvent_(item, spreadsheetId);
+        return json_({ ok: true });
+      }
+    }
   } catch (error) {
     console.error(error);
     return json_({ ok: false, error: "invalid_request" });
   }
+}
+
+function authorizeCacheStorage() {
+  const properties = PropertiesService.getScriptProperties();
+  const spreadsheetId = properties.getProperty("SPREADSHEET_ID");
+  if (!spreadsheetId) throw new Error("Nejprve spusťte setup.");
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  ensureCacheSheet_(spreadsheet);
+  const folder = ensureAudioFolder_();
+  return {
+    ok: true,
+    sheetUrl: spreadsheet.getUrl(),
+    folderUrl: folder.getUrl(),
+  };
+}
+
+function cacheGet_(spreadsheetId, rawKey) {
+  const key = validCacheKey_(rawKey);
+  if (!key) return { ok: false, error: "invalid_cache_key" };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = cacheSheet_(spreadsheetId);
+    const match = findValidCacheRow_(sheet, key, false);
+    if (!match) return { ok: true, hit: false };
+
+    let guide;
+    try {
+      guide = JSON.parse(String(match.values[6] || ""));
+    } catch (error) {
+      return { ok: true, hit: false };
+    }
+
+    const hits = Number(match.values[12]) || 0;
+    sheet.getRange(match.row, 12, 1, 2).setValues([[new Date(), hits + 1]]);
+    return {
+      ok: true,
+      hit: true,
+      guide: guide,
+      audioAvailable: Boolean(match.values[8]),
+      mp3Url: String(match.values[7] || ""),
+      validUntil: dateIso_(match.values[1]),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cacheSaveGuide_(spreadsheetId, payload) {
+  const key = validCacheKey_(payload.cacheKey);
+  if (!key) return { ok: false, error: "invalid_cache_key" };
+
+  const guideJson = JSON.stringify(payload.guide || {});
+  if (!guideJson || guideJson.length > 45000) {
+    return { ok: false, error: "guide_too_large" };
+  }
+
+  const now = new Date();
+  const validUntil = new Date(now.getTime());
+  validUntil.setFullYear(validUntil.getFullYear() + CACHE_TTL_YEARS);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = cacheSheet_(spreadsheetId);
+    sheet.appendRow([
+      now,
+      validUntil,
+      key,
+      cacheCoordinate_(payload.latitude, -90, 90),
+      cacheCoordinate_(payload.longitude, -180, 180),
+      safeCell_(payload.place),
+      guideJson,
+      "",
+      "",
+      safeCell_(payload.textModel),
+      "",
+      now,
+      0,
+    ]);
+    return {
+      ok: true,
+      cacheKey: key,
+      validUntil: validUntil.toISOString(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cacheGetAudio_(spreadsheetId, rawKey) {
+  const key = validCacheKey_(rawKey);
+  if (!key) return { ok: false, error: "invalid_cache_key" };
+
+  const sheet = cacheSheet_(spreadsheetId);
+  const match = findValidCacheRow_(sheet, key, true);
+  if (!match) return { ok: true, hit: false };
+
+  try {
+    const file = DriveApp.getFileById(String(match.values[8]));
+    if (file.isTrashed()) return { ok: true, hit: false };
+    const blob = file.getBlob();
+    sheet.getRange(match.row, 12).setValue(new Date());
+    return {
+      ok: true,
+      hit: true,
+      audioBase64: Utilities.base64Encode(blob.getBytes()),
+      mimeType: blob.getContentType() || "audio/mpeg",
+      mp3Url: file.getUrl(),
+    };
+  } catch (error) {
+    console.error(error);
+    return { ok: true, hit: false };
+  }
+}
+
+function cacheSaveAudio_(spreadsheetId, payload) {
+  const key = validCacheKey_(payload.cacheKey);
+  if (!key) return { ok: false, error: "invalid_cache_key" };
+  const encoded = String(payload.audioBase64 || "");
+  if (!encoded || encoded.length > 30000000) {
+    return { ok: false, error: "invalid_audio" };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet = cacheSheet_(spreadsheetId);
+    const match = findValidCacheRow_(sheet, key, false);
+    if (!match) return { ok: false, error: "cache_row_not_found" };
+
+    const existingFileId = String(match.values[8] || "");
+    if (existingFileId) {
+      try {
+        const existingFile = DriveApp.getFileById(existingFileId);
+        if (!existingFile.isTrashed()) {
+          return {
+            ok: true,
+            cacheKey: key,
+            mp3Url: existingFile.getUrl(),
+            reused: true,
+          };
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    const bytes = Utilities.base64Decode(encoded);
+    const mimeType = cleanText_(payload.mimeType, 80) || "audio/mpeg";
+    const placeName = fileNamePart_(payload.placeName) || "mistopis";
+    const timestamp = Utilities.formatDate(
+      new Date(),
+      Session.getScriptTimeZone(),
+      "yyyy-MM-dd_HH-mm-ss",
+    );
+    const blob = Utilities.newBlob(
+      bytes,
+      mimeType,
+      `${placeName}_${timestamp}.mp3`,
+    );
+    const file = ensureAudioFolder_().createFile(blob);
+    file.setDescription(`Místopis cache ${key}`);
+
+    sheet.getRange(match.row, 8, 1, 5).setValues([
+      [
+        file.getUrl(),
+        file.getId(),
+        match.values[9],
+        safeCell_(payload.ttsModel),
+        new Date(),
+      ],
+    ]);
+    return {
+      ok: true,
+      cacheKey: key,
+      mp3Url: file.getUrl(),
+      fileId: file.getId(),
+      reused: false,
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function cacheSheet_(spreadsheetId) {
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  return ensureCacheSheet_(spreadsheet);
+}
+
+function ensureCacheSheet_(spreadsheet) {
+  let sheet = spreadsheet.getSheetByName(SHEETS.cache);
+  if (!sheet) sheet = spreadsheet.insertSheet(SHEETS.cache);
+  sheet.getRange(1, 1, 1, CACHE_HEADERS.length).setValues([CACHE_HEADERS]);
+  sheet
+    .getRange(1, 1, 1, CACHE_HEADERS.length)
+    .setFontWeight("bold")
+    .setBackground("#e7ede9")
+    .setWrap(true);
+  sheet.setFrozenRows(1);
+  if (!sheet.getFilter()) {
+    sheet
+      .getRange(1, 1, Math.max(sheet.getMaxRows(), 2), CACHE_HEADERS.length)
+      .createFilter();
+  }
+  return sheet;
+}
+
+function ensureAudioFolder_() {
+  const properties = PropertiesService.getScriptProperties();
+  const folderId = properties.getProperty("AUDIO_FOLDER_ID");
+  if (folderId) {
+    try {
+      const folder = DriveApp.getFolderById(folderId);
+      if (!folder.isTrashed()) return folder;
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const folder = DriveApp.createFolder("Místopis – uložené MP3");
+  folder.setDescription(
+    "Soukromá audio cache aplikace Místopis. Soubory obsluhuje Google Apps Script.",
+  );
+  properties.setProperty("AUDIO_FOLDER_ID", folder.getId());
+  return folder;
+}
+
+function findValidCacheRow_(sheet, key, requireAudio) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const rows = sheet.getRange(2, 1, lastRow - 1, CACHE_HEADERS.length).getValues();
+  const now = Date.now();
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const values = rows[index];
+    const validUntil = values[1] instanceof Date ? values[1].getTime() : 0;
+    if (
+      String(values[2]) === key &&
+      validUntil > now &&
+      (!requireAudio || values[8])
+    ) {
+      return { row: index + 2, values: values };
+    }
+  }
+  return null;
+}
+
+function validCacheKey_(value) {
+  const key = String(value || "").trim();
+  return /^-?\d{1,2}\.\d{4},-?\d{1,3}\.\d{4}$/.test(key) ? key : "";
+}
+
+function cacheCoordinate_(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) return "";
+  return Math.round(number * 10000) / 10000;
+}
+
+function fileNamePart_(value) {
+  return cleanText_(value, 80)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function dateIso_(value) {
+  return value instanceof Date ? value.toISOString() : "";
 }
 
 function writeEvent_(item, spreadsheetId) {

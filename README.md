@@ -9,7 +9,8 @@ Beta verze osobního AI průvodce, který podle aktuální polohy představí hi
 - vytvořit česky psaný, zdrojovaný výklad pomocí Responses API,
 - doporučit doložitelná místa v pěší vzdálenosti,
 - odpovědět na doplňující otázku k místu,
-- převést celý výklad na přirozený AI hlas.
+- převést celý výklad na přirozený AI hlas,
+- uložit výklad a MP3 na jeden rok a při návratu na stejné místo je znovu použít,
 - anonymně měřit využití a chyby v soukromé Google tabulce.
 
 ## Lokální spuštění
@@ -43,6 +44,10 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - `.env*` soubory se skutečnými hodnotami jsou ignorované Gitem.
 - Souřadnice se používají pro reverzní geokódování a vytvoření výkladu.
 - Do analytiky se GPS ukládá pouze po zaokrouhlení na dvě desetinná místa.
+- Cache míst používá souřadnice zaokrouhlené na čtyři desetinná místa
+  (přibližně 11 metrů), aby poznala návrat na stejné místo.
+- Cache obsahuje vygenerovaný výklad a soukromý odkaz na MP3. Po jednom roce
+  se záznam přestane používat a aplikace vytvoří nový výklad i zvuk.
 - Text doplňujících otázek se neukládá, pouze jejich délka.
 - Náhodný identifikátor relace neobsahuje e-mail, IP adresu ani identitu uživatele.
 - Hlas je syntetický, vytvořený AI; aplikace to u přehrávače výslovně uvádí.
@@ -52,11 +57,14 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - `app/api/*` — endpointy pro lokální vývoj v Next.js,
 - `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
-- `google-apps-script` — verzovaný zdroj logovacího endpointu pro Google Sheets,
+- `google-apps-script` — verzovaný endpoint pro analytiku, cache v Google
+  Sheets a soukromá MP3 na Google Disku,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
 
-Modely a hlas lze měnit pomocí proměnných prostředí bez zásahu do kódu. Další vhodné kroky jsou cache výkladů podle geohashe, uživatelské trasy, více jazyků, redakčně spravované zdroje, ukládání oblíbených míst a Realtime API pro živý rozhovor.
+Modely a hlas lze měnit pomocí proměnných prostředí bez zásahu do kódu. Další
+vhodné kroky jsou uživatelské trasy, více jazyků, redakčně spravované zdroje,
+ukládání oblíbených míst a Realtime API pro živý rozhovor.
 
 ## Použité služby
 
@@ -76,7 +84,8 @@ GitHub Pages je čistě statický hosting. OpenAI klíč proto zůstává v odd�
 serverové aplikaci a veřejný frontend volá pouze její API. Proměnná
 `NEXT_PUBLIC_API_BASE_URL` obsahuje veřejnou adresu backendu, nikdy API klíč.
 
-Produkční backend předává anonymizované provozní události zabezpečenému Apps
-Script endpointu. Sdílený logovací token je uložen pouze v Script Properties a
-v serverových secrets. Pokud logování selže, hlavní funkce průvodce pokračují
-bez přerušení.
+Produkční backend používá zabezpečený Apps Script endpoint pro anonymizovanou
+analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI, platnost
+a odkaz na soukromé MP3 v adresáři `Místopis – uložené MP3`. Sdílený token je
+uložen pouze v Script Properties a v serverových secrets. Pokud Google úložiště
+selže, průvodce se pokusí požadavek dokončit přímo přes OpenAI.

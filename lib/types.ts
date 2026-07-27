@@ -29,4 +29,9 @@ export type GuideContent = {
   nearby: NearbyPlace[];
   question: string;
   sourceUrls: string[];
+  cache?: {
+    key: string;
+    hit: boolean;
+    audioAvailable: boolean;
+  };
 };

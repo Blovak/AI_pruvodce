@@ -198,7 +198,11 @@ export function GuideApp() {
           "Content-Type": "application/json",
           ...getSessionHeaders(),
         },
-        body: JSON.stringify({ text: spokenText }),
+        body: JSON.stringify({
+          text: spokenText,
+          cacheKey: guide.cache?.key,
+          placeName: guide.placeName,
+        }),
       });
       if (!response.ok) {
         const data = await response.json();
