@@ -5,6 +5,26 @@ type WorkerEnv = {
   OPENAI_TEXT_MODEL?: string;
   OPENAI_TTS_MODEL?: string;
   OPENAI_TTS_VOICE?: string;
+  GOOGLE_LOG_URL?: string;
+  GOOGLE_LOG_TOKEN?: string;
+};
+
+type Analytics = {
+  action: string;
+  session?: string;
+  status?: number;
+  durationMs?: number;
+  place?: string;
+  latitude?: number;
+  longitude?: number;
+  questionLength?: number;
+  inputChars?: number;
+  model?: string;
+  detail?: string;
+};
+
+type ExecutionContext = {
+  waitUntil(promise: Promise<unknown>): void;
 };
 
 const allowedOrigins = new Set([
@@ -75,7 +95,7 @@ function cors(origin: string | null) {
     "Access-Control-Allow-Origin":
       origin && allowedOrigins.has(origin) ? origin : "",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-Mistopis-Session",
     Vary: "Origin",
   };
 }
@@ -94,7 +114,11 @@ function json(
   });
 }
 
-async function geocode(url: URL, origin: string | null) {
+async function geocode(
+  url: URL,
+  origin: string | null,
+  analytics: Analytics,
+) {
   const headers = {
     "User-Agent": "Mistopis-beta/0.1 (AI location guide)",
     "Accept-Language": "cs,en;q=0.7",
@@ -102,6 +126,7 @@ async function geocode(url: URL, origin: string | null) {
   const query = url.searchParams.get("q")?.trim();
 
   if (query) {
+    analytics.action = "geocode_search";
     const target = new URL("https://nominatim.openstreetmap.org/search");
     target.searchParams.set("q", query.slice(0, 160));
     target.searchParams.set("format", "jsonv2");
@@ -127,6 +152,9 @@ async function geocode(url: URL, origin: string | null) {
 
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
+  analytics.action = "geocode_reverse";
+  analytics.latitude = latitude;
+  analytics.longitude = longitude;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return json({ error: "Chybí platná poloha." }, 400, origin);
   }
@@ -156,6 +184,7 @@ async function guide(
   request: Request,
   env: WorkerEnv,
   origin: string | null,
+  analytics: Analytics,
 ) {
   if (!env.OPENAI_API_KEY) {
     return json(
@@ -185,6 +214,11 @@ async function guide(
   });
   const location = String(body.label || "Neznámé místo").slice(0, 300);
   const userQuestion = String(body.question || "").trim().slice(0, 500);
+  analytics.place = location;
+  analytics.latitude = latitude;
+  analytics.longitude = longitude;
+  analytics.questionLength = userQuestion.length;
+  analytics.model = env.OPENAI_TEXT_MODEL || "gpt-5.6-sol";
   const result = await client.responses.create({
     model: env.OPENAI_TEXT_MODEL || "gpt-5.6-sol",
     instructions: `Role: Jsi Místopis, zvídavý a spolehlivý český průvodce místní historií.
@@ -225,6 +259,7 @@ async function speech(
   request: Request,
   env: WorkerEnv,
   origin: string | null,
+  analytics: Analytics,
 ) {
   if (!env.OPENAI_API_KEY) {
     return json(
@@ -236,6 +271,8 @@ async function speech(
 
   const body = (await request.json()) as { text?: string };
   const text = String(body.text || "").trim();
+  analytics.inputChars = text.length;
+  analytics.model = env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
   if (!text || text.length > 4096) {
     return json(
       { error: "Text pro poslech musí mít 1 až 4096 znaků." },
@@ -281,30 +318,67 @@ async function speech(
   });
 }
 
+async function logUsage(env: WorkerEnv, analytics: Analytics) {
+  if (!env.GOOGLE_LOG_URL || !env.GOOGLE_LOG_TOKEN) return;
+
+  try {
+    await fetch(env.GOOGLE_LOG_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        token: env.GOOGLE_LOG_TOKEN,
+        event: analytics,
+      }),
+    });
+  } catch (error) {
+    console.error("Analytics logging failed", error);
+  }
+}
+
 export default {
-  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: WorkerEnv,
+    context: ExecutionContext,
+  ): Promise<Response> {
     const origin = request.headers.get("origin");
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors(origin) });
     }
 
     const url = new URL(request.url);
+    const startedAt = Date.now();
+    const analytics: Analytics = {
+      action: url.pathname.replace("/api/", "") || "unknown",
+      session: request.headers.get("X-Mistopis-Session")?.slice(0, 80),
+    };
+
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
         return json({ status: "ok" }, 200, origin);
       }
+      let response: Response;
       if (request.method === "GET" && url.pathname === "/api/geocode") {
-        return await geocode(url, origin);
+        response = await geocode(url, origin, analytics);
+      } else if (request.method === "POST" && url.pathname === "/api/guide") {
+        response = await guide(request, env, origin, analytics);
+      } else if (request.method === "POST" && url.pathname === "/api/speech") {
+        response = await speech(request, env, origin, analytics);
+      } else {
+        response = json({ error: "Endpoint neexistuje." }, 404, origin);
       }
-      if (request.method === "POST" && url.pathname === "/api/guide") {
-        return await guide(request, env, origin);
-      }
-      if (request.method === "POST" && url.pathname === "/api/speech") {
-        return await speech(request, env, origin);
-      }
-      return json({ error: "Endpoint neexistuje." }, 404, origin);
+
+      analytics.status = response.status;
+      analytics.durationMs = Date.now() - startedAt;
+      context.waitUntil(logUsage(env, analytics));
+      return response;
     } catch (error) {
       console.error("Request failed", error);
+      analytics.status = 502;
+      analytics.durationMs = Date.now() - startedAt;
+      analytics.detail =
+        error instanceof Error ? error.message.slice(0, 300) : "Unknown error";
+      context.waitUntil(logUsage(env, analytics));
       return json(
         { error: "Server požadavek nedokončil. Zkuste to znovu." },
         502,

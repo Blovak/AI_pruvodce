@@ -25,6 +25,7 @@ import type { GuideContent, Place } from "@/lib/types";
 import { LocationSearch } from "@/components/LocationSearch";
 import { MapView } from "@/components/MapView";
 import { apiUrl } from "@/lib/api-url";
+import { getSessionHeaders } from "@/lib/session";
 
 type Status = "idle" | "locating" | "loading" | "ready" | "error";
 
@@ -55,7 +56,10 @@ export function GuideApp() {
     try {
       const response = await fetch(apiUrl("/api/guide"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getSessionHeaders(),
+        },
         body: JSON.stringify({
           ...nextPlace,
           question: nextQuestion,
@@ -95,6 +99,7 @@ export function GuideApp() {
             apiUrl(
               `/api/geocode?lat=${coordinates.latitude}&lon=${coordinates.longitude}`,
             ),
+            { headers: getSessionHeaders() },
           );
           const data = await response.json();
           const nextPlace: Place = {
@@ -152,7 +157,10 @@ export function GuideApp() {
         .join(" ")}`;
       const response = await fetch(apiUrl("/api/speech"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...getSessionHeaders(),
+        },
         body: JSON.stringify({ text: spokenText }),
       });
       if (!response.ok) {

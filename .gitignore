@@ -16,6 +16,10 @@
 .env.local
 .env.*.local
 
+# Google Apps Script local credentials / generated secrets
+/google-apps-script/.clasprc.json
+/google-apps-script/Secrets.js
+
 # misc
 .DS_Store
 *.pem

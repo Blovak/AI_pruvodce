@@ -10,6 +10,7 @@ Beta verze osobního AI průvodce, který podle aktuální polohy představí hi
 - doporučit doložitelná místa v pěší vzdálenosti,
 - odpovědět na doplňující otázku k místu,
 - převést celý výklad na přirozený AI hlas.
+- anonymně měřit využití a chyby v soukromé Google tabulce.
 
 ## Lokální spuštění
 
@@ -41,13 +42,17 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - API klíč zůstává pouze v serverovém prostředí a neposílá se do prohlížeče.
 - `.env*` soubory se skutečnými hodnotami jsou ignorované Gitem.
 - Souřadnice se používají pro reverzní geokódování a vytvoření výkladu.
+- Do analytiky se GPS ukládá pouze po zaokrouhlení na dvě desetinná místa.
+- Text doplňujících otázek se neukládá, pouze jejich délka.
+- Náhodný identifikátor relace neobsahuje e-mail, IP adresu ani identitu uživatele.
 - Hlas je syntetický, vytvořený AI; aplikace to u přehrávače výslovně uvádí.
 
 ## Architektura připravená na rozvoj
 
 - `app/api/*` — endpointy pro lokální vývoj v Next.js,
-- `server/index.ts` — samostatný produkční Node server se stejnými API cestami,
+- `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
+- `google-apps-script` — verzovaný zdroj logovacího endpointu pro Google Sheets,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
 
@@ -70,3 +75,8 @@ Veřejné rozhraní se automaticky publikuje přes GitHub Actions na:
 GitHub Pages je čistě statický hosting. OpenAI klíč proto zůstává v oddělené
 serverové aplikaci a veřejný frontend volá pouze její API. Proměnná
 `NEXT_PUBLIC_API_BASE_URL` obsahuje veřejnou adresu backendu, nikdy API klíč.
+
+Produkční backend předává anonymizované provozní události zabezpečenému Apps
+Script endpointu. Sdílený logovací token je uložen pouze v Script Properties a
+v serverových secrets. Pokud logování selže, hlavní funkce průvodce pokračují
+bez přerušení.

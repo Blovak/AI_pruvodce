@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { LoaderCircle, MapPin, Search, X } from "lucide-react";
 import type { Place } from "@/lib/types";
 import { apiUrl } from "@/lib/api-url";
+import { getSessionHeaders } from "@/lib/session";
 
 export function LocationSearch({
   open,
@@ -27,6 +28,7 @@ export function LocationSearch({
     try {
       const response = await fetch(
         apiUrl(`/api/geocode?q=${encodeURIComponent(query)}`),
+        { headers: getSessionHeaders() },
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
