@@ -45,9 +45,9 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 
 ## Architektura připravená na rozvoj
 
-- `app/api/guide` — generování a webové ověření obsahu,
-- `app/api/speech` — serverová syntéza hlasu,
-- `app/api/geocode` — jednotná vrstva pro reverzní geokódování i hledání,
+- `app/api/*` — endpointy pro lokální vývoj v Next.js,
+- `server/index.ts` — samostatný produkční Node server se stejnými API cestami,
+- `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
 
