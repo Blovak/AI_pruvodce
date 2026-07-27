@@ -32,6 +32,14 @@ type Status = "idle" | "locating" | "loading" | "ready" | "error";
 const silentAudio =
   "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
 
+function requiresDirectAudioTap() {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
 export function GuideApp() {
   const [place, setPlace] = useState<Place | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
@@ -162,12 +170,15 @@ export function GuideApp() {
         setAudioPlaying(false);
       } else {
         try {
+          audio.muted = false;
+          audio.volume = 1;
           await audio.play();
           setAudioPlaying(true);
+          setMessage("");
         } catch {
           setShowNativeAudio(true);
           setMessage(
-            "Safari čeká na ruční spuštění. Použijte ovládání přehrávače pod tlačítkem.",
+            "Chrome čeká na ruční spuštění. Použijte ovládání přehrávače pod tlačítkem.",
           );
         }
       }
@@ -178,22 +189,6 @@ export function GuideApp() {
     setMessage("");
     setShowNativeAudio(false);
     try {
-      // Safari na iOS povoluje zvuk pro konkrétní media element pouze v přímé
-      // reakci na gesto. Krátké ticho odemkne stále stejný element ještě před
-      // dlouhým požadavkem na vytvoření hlasu.
-      audio.muted = true;
-      audio.src = silentAudio;
-      audio.load();
-      try {
-        await audio.play();
-      } catch {
-        // Některé verze Safari tichý zdroj odmítnou. Po vytvoření audia proto
-        // nabídneme tentýž element také s nativním ručním ovládáním.
-      }
-      audio.pause();
-      audio.currentTime = 0;
-      audio.muted = false;
-
       const spokenText = `${guide.placeName}. ${guide.overview} ${guide.story} ${guide.facts
         .map((fact) => `${fact.title}. ${fact.text}`)
         .join(" ")}`;
@@ -213,15 +208,26 @@ export function GuideApp() {
       audioUrlRef.current = url;
       audio.src = url;
       audio.preload = "auto";
+      audio.muted = false;
+      audio.volume = 1;
       audio.load();
       setAudioReady(true);
+
+      if (requiresDirectAudioTap()) {
+        setShowNativeAudio(true);
+        setMessage(
+          "Zvuk je připravený. Klepněte na „Spustit připravený zvuk“ nebo na přehrát níže.",
+        );
+        return;
+      }
+
       try {
         await audio.play();
         setAudioPlaying(true);
       } catch {
         setShowNativeAudio(true);
         setMessage(
-          "Zvuk je připravený. Safari vyžaduje ještě jedno klepnutí na přehrát.",
+          "Zvuk je připravený. Prohlížeč vyžaduje ještě jedno klepnutí na přehrát.",
         );
       }
     } catch (reason) {
@@ -313,9 +319,21 @@ export function GuideApp() {
                   </span>
                   <span>
                     <strong>
-                      {audioPlaying ? "Pozastavit vyprávění" : "Poslechnout příběh"}
+                      {audioLoading
+                        ? "Připravuji zvuk…"
+                        : audioPlaying
+                          ? "Pozastavit vyprávění"
+                          : audioReady
+                            ? "Spustit připravený zvuk"
+                            : "Poslechnout příběh"}
                     </strong>
-                    <small>Čte AI hlas · přibližně 2 minuty</small>
+                    <small>
+                      {audioLoading
+                        ? "Vytvoření může trvat několik sekund"
+                        : audioReady && !audioPlaying
+                          ? "Zvuk je načtený · klepněte pro přehrání"
+                          : "Čte AI hlas · přibližně 2 minuty"}
+                    </small>
                   </span>
                   <Volume2 size={18} />
                 </button>
