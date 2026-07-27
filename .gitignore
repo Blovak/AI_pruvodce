@@ -3,8 +3,10 @@
 
 # next.js
 /.next/
+/.open-next/
 /out/
 /pages-dist/
+/dist/
 
 # production
 /build

@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && opennextjs-cloudflare build --skipNextBuild && node scripts/package-sites.mjs",
+    "build:next": "next build",
     "build:pages": "next build && node scripts/package-pages.mjs",
     "start": "next start",
     "typecheck": "tsc --noEmit"
@@ -17,12 +18,14 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "wrangler": "^4.114.0"
   },
   "engines": {
-    "node": ">=18.18.0"
+    "node": ">=22.0.0"
   }
 }

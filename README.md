@@ -13,7 +13,7 @@ Beta verze osobního AI průvodce, který podle aktuální polohy představí hi
 
 ## Lokální spuštění
 
-Požadavky: Node.js 18.18+ a OpenAI API klíč.
+Požadavky: Node.js 22+ a OpenAI API klíč.
 
 ```bash
 npm install

@@ -19,5 +19,9 @@ const html = await readFile(
 await writeFile(path.join(output, "index.html"), html);
 await writeFile(path.join(output, ".nojekyll"), "");
 await writeFile(path.join(output, "404.html"), html);
+await cp(
+  path.join(root, ".next", "server", "app", "manifest.webmanifest.body"),
+  path.join(output, "manifest.webmanifest"),
+);
 
 console.log(`GitHub Pages artifact created at ${output}`);
