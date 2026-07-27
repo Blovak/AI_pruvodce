@@ -40,6 +40,22 @@ function requiresDirectAudioTap() {
   );
 }
 
+function speechChunks(text: string) {
+  const chunks: string[] = [];
+  let current = "";
+  for (const word of text.split(/\s+/)) {
+    const next = `${current} ${word}`.trim();
+    if (next.length <= 200) {
+      current = next;
+    } else {
+      if (current) chunks.push(current);
+      current = word;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 export function GuideApp() {
   const [place, setPlace] = useState<Place | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
@@ -51,8 +67,11 @@ export function GuideApp() {
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioReady, setAudioReady] = useState(false);
   const [showNativeAudio, setShowNativeAudio] = useState(false);
+  const [systemSpeaking, setSystemSpeaking] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const speechRunRef = useRef(0);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     return () => {
@@ -61,6 +80,8 @@ export function GuideApp() {
       audio?.removeAttribute("src");
       audio?.load();
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      speechRunRef.current += 1;
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -68,7 +89,7 @@ export function GuideApp() {
     setPlace(nextPlace);
     setStatus("loading");
     setMessage("");
-    stopAudio();
+    stopAllAudio();
     try {
       const response = await fetch(apiUrl("/api/guide"), {
         method: "POST",
@@ -143,7 +164,7 @@ export function GuideApp() {
     );
   }
 
-  function stopAudio() {
+  function stopMp3Audio() {
     const audio = audioRef.current;
     audio?.pause();
     audio?.removeAttribute("src");
@@ -157,6 +178,82 @@ export function GuideApp() {
     }
   }
 
+  function pauseMp3Audio() {
+    audioRef.current?.pause();
+    setAudioPlaying(false);
+  }
+
+  function stopSystemSpeech() {
+    speechRunRef.current += 1;
+    window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setSystemSpeaking(false);
+  }
+
+  function stopAllAudio() {
+    stopMp3Audio();
+    stopSystemSpeech();
+  }
+
+  function spokenGuideText() {
+    return `${guide.placeName}. ${guide.overview} ${guide.story} ${guide.facts
+      .map((fact) => `${fact.title}. ${fact.text}`)
+      .join(" ")}`;
+  }
+
+  function toggleSystemSpeech() {
+    if (!("speechSynthesis" in window)) {
+      setMessage("Tento prohlížeč systémové čtení nepodporuje.");
+      return;
+    }
+    if (systemSpeaking) {
+      stopSystemSpeech();
+      setMessage("");
+      return;
+    }
+
+    pauseMp3Audio();
+    const chunks = speechChunks(spokenGuideText());
+    const run = speechRunRef.current + 1;
+    speechRunRef.current = run;
+    const voices = window.speechSynthesis.getVoices();
+    const voice =
+      voices.find(
+        (candidate) =>
+          candidate.lang.toLowerCase() === "cs-cz" && candidate.localService,
+      ) ??
+      voices.find((candidate) => candidate.lang.toLowerCase() === "cs-cz") ??
+      voices.find((candidate) => candidate.lang.toLowerCase().startsWith("cs"));
+
+    const speak = (index: number) => {
+      if (speechRunRef.current !== run) return;
+      if (index >= chunks.length) {
+        utteranceRef.current = null;
+        setSystemSpeaking(false);
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(chunks[index]);
+      utterance.lang = "cs-CZ";
+      utterance.rate = 0.95;
+      if (voice) utterance.voice = voice;
+      utterance.onend = () => speak(index + 1);
+      utterance.onerror = (event) => {
+        if (speechRunRef.current !== run) return;
+        utteranceRef.current = null;
+        setSystemSpeaking(false);
+        if (event.error !== "canceled" && event.error !== "interrupted") {
+          setMessage("Systémový hlas se nepodařilo spustit.");
+        }
+      };
+      utteranceRef.current = utterance;
+      window.speechSynthesis.speak(utterance);
+    };
+
+    setMessage("");
+    setSystemSpeaking(true);
+    speak(0);
+  }
+
   async function toggleAudio() {
     const audio = audioRef.current;
     if (!audio) {
@@ -164,6 +261,7 @@ export function GuideApp() {
       return;
     }
 
+    stopSystemSpeech();
     if (audioReady) {
       if (audioPlaying) {
         audio.pause();
@@ -189,9 +287,7 @@ export function GuideApp() {
     setMessage("");
     setShowNativeAudio(false);
     try {
-      const spokenText = `${guide.placeName}. ${guide.overview} ${guide.story} ${guide.facts
-        .map((fact) => `${fact.title}. ${fact.text}`)
-        .join(" ")}`;
+      const spokenText = spokenGuideText();
       const response = await fetch(apiUrl("/api/speech"), {
         method: "POST",
         headers: {
@@ -306,47 +402,74 @@ export function GuideApp() {
               <>
                 <p className="overview">{guide.overview}</p>
 
-                <button
-                  className="listen-button"
-                  disabled={!place || status !== "ready" || audioLoading}
-                  onClick={toggleAudio}
-                  type="button"
-                >
-                  <span className="listen-icon">
-                    {audioLoading ? (
-                      <LoaderCircle className="spin" size={21} />
-                    ) : audioPlaying ? (
-                      <Pause size={21} fill="currentColor" />
-                    ) : (
-                      <Play size={21} fill="currentColor" />
-                    )}
-                  </span>
-                  <span>
-                    <strong>
-                      {audioLoading
-                        ? "Připravuji zvuk…"
-                        : audioPlaying
-                          ? "Pozastavit vyprávění"
-                          : audioReady
-                            ? "Spustit připravený zvuk"
-                            : "Poslechnout příběh"}
-                    </strong>
-                    <small>
-                      {audioLoading
-                        ? "Vytvoření může trvat několik sekund"
-                        : audioReady && !audioPlaying
-                          ? "Zvuk je načtený · klepněte pro přehrání"
-                          : "Čte AI hlas · přibližně 2 minuty"}
-                    </small>
-                  </span>
-                  <Volume2 size={18} />
-                </button>
+                <div className="audio-actions">
+                  <button
+                    className="listen-button system-voice-button"
+                    disabled={!place || status !== "ready" || audioLoading}
+                    onClick={toggleSystemSpeech}
+                    type="button"
+                  >
+                    <span className="listen-icon">
+                      {systemSpeaking ? (
+                        <CircleStop size={21} />
+                      ) : (
+                        <Volume2 size={21} />
+                      )}
+                    </span>
+                    <span>
+                      <strong>
+                        {systemSpeaking
+                          ? "Zastavit systémový hlas"
+                          : "Přečíst systémovým hlasem"}
+                      </strong>
+                      <small>Zdarma · hlas tohoto zařízení</small>
+                    </span>
+                  </button>
+
+                  <button
+                    className="listen-button mp3-button"
+                    disabled={!place || status !== "ready" || audioLoading}
+                    onClick={toggleAudio}
+                    type="button"
+                  >
+                    <span className="listen-icon">
+                      {audioLoading ? (
+                        <LoaderCircle className="spin" size={21} />
+                      ) : audioPlaying ? (
+                        <Pause size={21} fill="currentColor" />
+                      ) : (
+                        <Play size={21} fill="currentColor" />
+                      )}
+                    </span>
+                    <span>
+                      <strong>
+                        {audioLoading
+                          ? "Připravuji MP3…"
+                          : audioPlaying
+                            ? "Pozastavit MP3"
+                            : audioReady
+                              ? "Spustit připravené MP3"
+                              : "Vygenerovat nebo načíst MP3"}
+                      </strong>
+                      <small>
+                        {audioLoading
+                          ? "Vytvoření může trvat několik sekund"
+                          : audioReady && !audioPlaying
+                            ? "MP3 je načtené · klepněte pro přehrání"
+                            : guide.cache?.audioAvailable
+                              ? "Uložené MP3 · bez nového generování"
+                              : "AI hlas · uloží se na Google Disk"}
+                      </small>
+                    </span>
+                  </button>
+                </div>
                 <audio
                   className={`native-audio${showNativeAudio ? " is-visible" : ""}`}
                   controls
                   onEnded={() => setAudioPlaying(false)}
                   onPause={() => setAudioPlaying(false)}
                   onPlay={() => {
+                    stopSystemSpeech();
                     if (audioReady) setAudioPlaying(true);
                   }}
                   playsInline

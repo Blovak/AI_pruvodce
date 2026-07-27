@@ -9,7 +9,8 @@ Beta verze osobního AI průvodce, který podle aktuální polohy představí hi
 - vytvořit česky psaný, zdrojovaný výklad pomocí Responses API,
 - doporučit doložitelná místa v pěší vzdálenosti,
 - odpovědět na doplňující otázku k místu,
-- převést celý výklad na přirozený AI hlas,
+- přečíst výklad zdarma systémovým hlasem telefonu nebo počítače,
+- vytvořit či načíst výklad jako MP3 s přirozeným AI hlasem,
 - uložit výklad a MP3 na jeden rok a při návratu na stejné místo je znovu použít,
 - anonymně měřit využití a chyby v soukromé Google tabulce.
 
