@@ -13,9 +13,9 @@ await build({
   entryPoints: [path.join(root, "server", "index.ts")],
   outfile: path.join(output, "server", "index.js"),
   bundle: true,
-  platform: "node",
+  platform: "browser",
   format: "esm",
-  target: "node22",
+  target: "es2022",
   minify: true,
   sourcemap: false,
 });

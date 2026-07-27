@@ -1,5 +1,11 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import OpenAI from "openai";
+
+type WorkerEnv = {
+  OPENAI_API_KEY?: string;
+  OPENAI_TEXT_MODEL?: string;
+  OPENAI_TTS_MODEL?: string;
+  OPENAI_TTS_VOICE?: string;
+};
 
 const allowedOrigins = new Set([
   "https://blovak.github.io",
@@ -64,7 +70,7 @@ const guideSchema = {
   },
 } as const;
 
-function cors(origin: string | undefined) {
+function cors(origin: string | null) {
   return {
     "Access-Control-Allow-Origin":
       origin && allowedOrigins.has(origin) ? origin : "",
@@ -74,40 +80,21 @@ function cors(origin: string | undefined) {
   };
 }
 
-function sendJson(
-  response: ServerResponse,
-  status: number,
+function json(
   value: unknown,
-  origin?: string,
+  status = 200,
+  origin: string | null = null,
 ) {
-  response.writeHead(status, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store",
-    ...cors(origin),
+  return Response.json(value, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      ...cors(origin),
+    },
   });
-  response.end(JSON.stringify(value));
 }
 
-async function readJson(request: IncomingMessage) {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.from(chunk);
-    size += buffer.length;
-    if (size > 32_000) throw new Error("Request body is too large");
-    chunks.push(buffer);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
-    string,
-    unknown
-  >;
-}
-
-async function geocode(
-  url: URL,
-  response: ServerResponse,
-  origin?: string,
-) {
+async function geocode(url: URL, origin: string | null) {
   const headers = {
     "User-Agent": "Mistopis-beta/0.1 (AI location guide)",
     "Accept-Language": "cs,en;q=0.7",
@@ -120,24 +107,20 @@ async function geocode(
     target.searchParams.set("format", "jsonv2");
     target.searchParams.set("limit", "5");
     target.searchParams.set("addressdetails", "1");
-    const result = await fetch(target, {
-      headers,
-      signal: AbortSignal.timeout(12_000),
-    });
+    const result = await fetch(target, { headers });
     if (!result.ok) throw new Error("Geocoding service failed");
     const places = (await result.json()) as Array<{
       display_name: string;
       lat: string;
       lon: string;
     }>;
-    return sendJson(
-      response,
-      200,
+    return json(
       places.map((place) => ({
         label: place.display_name,
         latitude: Number(place.lat),
         longitude: Number(place.lon),
       })),
+      200,
       origin,
     );
   }
@@ -145,7 +128,7 @@ async function geocode(
   const latitude = Number(url.searchParams.get("lat"));
   const longitude = Number(url.searchParams.get("lon"));
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return sendJson(response, 400, { error: "Chybí platná poloha." }, origin);
+    return json({ error: "Chybí platná poloha." }, 400, origin);
   }
 
   const target = new URL("https://nominatim.openstreetmap.org/reverse");
@@ -153,15 +136,10 @@ async function geocode(
   target.searchParams.set("lon", String(longitude));
   target.searchParams.set("format", "jsonv2");
   target.searchParams.set("zoom", "18");
-  const result = await fetch(target, {
-    headers,
-    signal: AbortSignal.timeout(12_000),
-  });
+  const result = await fetch(target, { headers });
   if (!result.ok) throw new Error("Reverse geocoding service failed");
   const place = (await result.json()) as { display_name?: string };
-  return sendJson(
-    response,
-    200,
+  return json(
     {
       label:
         place.display_name ??
@@ -169,25 +147,25 @@ async function geocode(
       latitude,
       longitude,
     },
+    200,
     origin,
   );
 }
 
 async function guide(
-  request: IncomingMessage,
-  response: ServerResponse,
-  origin?: string,
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
 ) {
-  if (!process.env.OPENAI_API_KEY) {
-    return sendJson(
-      response,
-      503,
+  if (!env.OPENAI_API_KEY) {
+    return json(
       { error: "Na serveru chybí OPENAI_API_KEY." },
+      503,
       origin,
     );
   }
 
-  const body = await readJson(request);
+  const body = (await request.json()) as Record<string, unknown>;
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   if (
@@ -198,14 +176,17 @@ async function guide(
     longitude < -180 ||
     longitude > 180
   ) {
-    return sendJson(response, 400, { error: "Neplatná poloha." }, origin);
+    return json({ error: "Neplatná poloha." }, 400, origin);
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    dangerouslyAllowBrowser: true,
+  });
   const location = String(body.label || "Neznámé místo").slice(0, 300);
   const userQuestion = String(body.question || "").trim().slice(0, 500);
   const result = await client.responses.create({
-    model: process.env.OPENAI_TEXT_MODEL || "gpt-5.6-sol",
+    model: env.OPENAI_TEXT_MODEL || "gpt-5.6-sol",
     instructions: `Role: Jsi Místopis, zvídavý a spolehlivý český průvodce místní historií.
 
 Cíl: Vytvoř krátký mobilní výklad k přesnému místu. Uživatel má mít pocit, že se na známé okolí dívá novýma očima.
@@ -237,39 +218,40 @@ ${userQuestion ? `Doplňující otázka uživatele: ${userQuestion}` : "Připrav
     },
   });
 
-  return sendJson(response, 200, JSON.parse(result.output_text), origin);
+  return json(JSON.parse(result.output_text), 200, origin);
 }
 
 async function speech(
-  request: IncomingMessage,
-  response: ServerResponse,
-  origin?: string,
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
 ) {
-  if (!process.env.OPENAI_API_KEY) {
-    return sendJson(
-      response,
-      503,
+  if (!env.OPENAI_API_KEY) {
+    return json(
       { error: "Na serveru chybí OPENAI_API_KEY." },
+      503,
       origin,
     );
   }
 
-  const body = await readJson(request);
+  const body = (await request.json()) as { text?: string };
   const text = String(body.text || "").trim();
   if (!text || text.length > 4096) {
-    return sendJson(
-      response,
-      400,
+    return json(
       { error: "Text pro poslech musí mít 1 až 4096 znaků." },
+      400,
       origin,
     );
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = new OpenAI({
+    apiKey: env.OPENAI_API_KEY,
+    dangerouslyAllowBrowser: true,
+  });
   const audio = await client.audio.speech.create({
-    model: process.env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
+    model: env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
     voice:
-      (process.env.OPENAI_TTS_VOICE as
+      (env.OPENAI_TTS_VOICE as
         | "alloy"
         | "ash"
         | "ballad"
@@ -289,52 +271,45 @@ async function speech(
     response_format: "mp3",
   });
 
-  response.writeHead(200, {
-    "Content-Type": "audio/mpeg",
-    "Cache-Control": "private, max-age=3600",
-    ...cors(origin),
+  return new Response(await audio.arrayBuffer(), {
+    status: 200,
+    headers: {
+      "Content-Type": "audio/mpeg",
+      "Cache-Control": "private, max-age=3600",
+      ...cors(origin),
+    },
   });
-  response.end(Buffer.from(await audio.arrayBuffer()));
 }
 
-const server = createServer(async (request, response) => {
-  const origin = request.headers.origin;
-  if (request.method === "OPTIONS") {
-    response.writeHead(204, cors(origin));
-    return response.end();
-  }
+export default {
+  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    const origin = request.headers.get("origin");
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: cors(origin) });
+    }
 
-  const url = new URL(
-    request.url || "/",
-    `http://${request.headers.host || "localhost"}`,
-  );
-
-  try {
-    if (request.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(response, 200, { status: "ok" }, origin);
+    const url = new URL(request.url);
+    try {
+      if (request.method === "GET" && url.pathname === "/api/health") {
+        return json({ status: "ok" }, 200, origin);
+      }
+      if (request.method === "GET" && url.pathname === "/api/geocode") {
+        return await geocode(url, origin);
+      }
+      if (request.method === "POST" && url.pathname === "/api/guide") {
+        return await guide(request, env, origin);
+      }
+      if (request.method === "POST" && url.pathname === "/api/speech") {
+        return await speech(request, env, origin);
+      }
+      return json({ error: "Endpoint neexistuje." }, 404, origin);
+    } catch (error) {
+      console.error("Request failed", error);
+      return json(
+        { error: "Server požadavek nedokončil. Zkuste to znovu." },
+        502,
+        origin,
+      );
     }
-    if (request.method === "GET" && url.pathname === "/api/geocode") {
-      return await geocode(url, response, origin);
-    }
-    if (request.method === "POST" && url.pathname === "/api/guide") {
-      return await guide(request, response, origin);
-    }
-    if (request.method === "POST" && url.pathname === "/api/speech") {
-      return await speech(request, response, origin);
-    }
-    return sendJson(response, 404, { error: "Endpoint neexistuje." }, origin);
-  } catch (error) {
-    console.error("Request failed", error);
-    return sendJson(
-      response,
-      502,
-      { error: "Server požadavek nedokončil. Zkuste to znovu." },
-      origin,
-    );
-  }
-});
-
-const port = Number(process.env.PORT || 3000);
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Místopis server naslouchá na portu ${port}`);
-});
+  },
+};
