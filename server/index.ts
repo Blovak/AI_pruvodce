@@ -347,6 +347,8 @@ export default {
     }
 
     const url = new URL(request.url);
+    const shouldLog =
+      url.pathname.startsWith("/api/") && url.pathname !== "/api/health";
     const startedAt = Date.now();
     const analytics: Analytics = {
       action: url.pathname.replace("/api/", "") || "unknown",
@@ -370,7 +372,7 @@ export default {
 
       analytics.status = response.status;
       analytics.durationMs = Date.now() - startedAt;
-      context.waitUntil(logUsage(env, analytics));
+      if (shouldLog) context.waitUntil(logUsage(env, analytics));
       return response;
     } catch (error) {
       console.error("Request failed", error);
@@ -378,7 +380,7 @@ export default {
       analytics.durationMs = Date.now() - startedAt;
       analytics.detail =
         error instanceof Error ? error.message.slice(0, 300) : "Unknown error";
-      context.waitUntil(logUsage(env, analytics));
+      if (shouldLog) context.waitUntil(logUsage(env, analytics));
       return json(
         { error: "Server požadavek nedokončil. Zkuste to znovu." },
         502,
