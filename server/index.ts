@@ -30,7 +30,11 @@ type ExecutionContext = {
 type CachedGuide = {
   guide: Record<string, unknown>;
   audioAvailable: boolean;
+  cacheKey?: string;
+  distanceMeters?: number;
 };
+
+const GUIDE_CACHE_RADIUS_METERS = 800;
 
 const allowedOrigins = new Set([
   "https://blovak.github.io",
@@ -271,16 +275,24 @@ async function guide(
     try {
       const cached = await googleRequest<CachedGuide>(env, "cacheGet", {
         cacheKey: key,
+        latitude,
+        longitude,
+        maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
       });
       if (cached?.guide) {
-        analytics.detail = "cache_hit";
+        const matchedKey = cached.cacheKey || key;
+        analytics.detail =
+          Number(cached.distanceMeters) > 1
+            ? "cache_hit_nearby"
+            : "cache_hit_exact";
         return json(
           {
             ...cached.guide,
             cache: {
-              key,
+              key: matchedKey,
               hit: true,
               audioAvailable: Boolean(cached.audioAvailable),
+              distanceMeters: cached.distanceMeters,
             },
           },
           200,

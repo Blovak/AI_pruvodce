@@ -7,6 +7,9 @@ const SHEETS = {
 };
 
 const CACHE_TTL_YEARS = 1;
+const DEFAULT_CACHE_RADIUS_METERS = 800;
+const MAX_CACHE_RADIUS_METERS = 5000;
+const EARTH_RADIUS_METERS = 6371008.8;
 
 const USAGE_HEADERS = [
   "Čas",
@@ -112,7 +115,7 @@ function doPost(event) {
     const spreadsheetId = properties.getProperty("SPREADSHEET_ID");
     switch (String(payload.operation || "log")) {
       case "cacheGet":
-        return json_(cacheGet_(spreadsheetId, payload.cacheKey));
+        return json_(cacheGet_(spreadsheetId, payload));
       case "cacheSaveGuide":
         return json_(cacheSaveGuide_(spreadsheetId, payload));
       case "cacheGetAudio":
@@ -145,23 +148,48 @@ function authorizeCacheStorage() {
   };
 }
 
-function cacheGet_(spreadsheetId, rawKey) {
-  const key = validCacheKey_(rawKey);
-  if (!key) return { ok: false, error: "invalid_cache_key" };
+function cacheGet_(spreadsheetId, rawRequest) {
+  const request =
+    rawRequest && typeof rawRequest === "object"
+      ? rawRequest
+      : { cacheKey: rawRequest };
+  const key = validCacheKey_(request.cacheKey);
+  const latitude = coordinateNumber_(request.latitude, -90, 90);
+  const longitude = coordinateNumber_(request.longitude, -180, 180);
+  const hasCoordinates = latitude !== null && longitude !== null;
+  if (!hasCoordinates && !key) {
+    return { ok: false, error: "invalid_cache_location" };
+  }
+
+  const requestedRadius = Number(request.maxDistanceMeters);
+  const maxDistanceMeters = Math.min(
+    Math.max(
+      Number.isFinite(requestedRadius)
+        ? requestedRadius
+        : DEFAULT_CACHE_RADIUS_METERS,
+      0,
+    ),
+    MAX_CACHE_RADIUS_METERS,
+  );
 
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
   try {
     const sheet = cacheSheet_(spreadsheetId);
-    const match = findValidCacheRow_(sheet, key, false);
+    const match = hasCoordinates
+      ? findNearestValidCacheRow_(
+          sheet,
+          latitude,
+          longitude,
+          maxDistanceMeters,
+          false,
+        )
+      : findValidCacheRow_(sheet, key, false);
     if (!match) return { ok: true, hit: false };
 
-    let guide;
-    try {
-      guide = JSON.parse(String(match.values[6] || ""));
-    } catch (error) {
-      return { ok: true, hit: false };
-    }
+    const guide =
+      match.guide || parseGuideJson_(String(match.values[6] || ""));
+    if (!guide) return { ok: true, hit: false };
 
     const hits = Number(match.values[12]) || 0;
     sheet.getRange(match.row, 12, 1, 2).setValues([[new Date(), hits + 1]]);
@@ -169,6 +197,8 @@ function cacheGet_(spreadsheetId, rawKey) {
       ok: true,
       hit: true,
       guide: guide,
+      cacheKey: String(match.values[2] || ""),
+      distanceMeters: Math.round(Number(match.distanceMeters) || 0),
       audioAvailable: Boolean(match.values[8]),
       mp3Url: String(match.values[7] || ""),
       validUntil: dateIso_(match.values[1]),
@@ -375,6 +405,92 @@ function findValidCacheRow_(sheet, key, requireAudio) {
     }
   }
   return null;
+}
+
+function findNearestValidCacheRow_(
+  sheet,
+  latitude,
+  longitude,
+  maxDistanceMeters,
+  requireAudio,
+) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const rows = sheet
+    .getRange(2, 1, lastRow - 1, CACHE_HEADERS.length)
+    .getValues();
+  const now = Date.now();
+  let nearest = null;
+
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const values = rows[index];
+    const validUntil = values[1] instanceof Date ? values[1].getTime() : 0;
+    if (validUntil <= now || (requireAudio && !values[8])) continue;
+
+    const rowLatitude = coordinateNumber_(values[3], -90, 90);
+    const rowLongitude = coordinateNumber_(values[4], -180, 180);
+    if (rowLatitude === null || rowLongitude === null) continue;
+
+    const distanceMeters = haversineMeters_(
+      latitude,
+      longitude,
+      rowLatitude,
+      rowLongitude,
+    );
+    if (
+      distanceMeters > maxDistanceMeters + 0.01 ||
+      (nearest && distanceMeters >= nearest.distanceMeters)
+    ) {
+      continue;
+    }
+
+    const guide = parseGuideJson_(String(values[6] || ""));
+    if (!guide) continue;
+    nearest = {
+      row: index + 2,
+      values: values,
+      guide: guide,
+      distanceMeters: distanceMeters,
+    };
+  }
+
+  return nearest;
+}
+
+function haversineMeters_(latitudeA, longitudeA, latitudeB, longitudeB) {
+  const toRadians = Math.PI / 180;
+  const latitudeDelta = (latitudeB - latitudeA) * toRadians;
+  const longitudeDelta = (longitudeB - longitudeA) * toRadians;
+  const latitudeARadians = latitudeA * toRadians;
+  const latitudeBRadians = latitudeB * toRadians;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitudeARadians) *
+      Math.cos(latitudeBRadians) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return (
+    2 *
+    EARTH_RADIUS_METERS *
+    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  );
+}
+
+function parseGuideJson_(value) {
+  try {
+    const guide = JSON.parse(value);
+    return guide && typeof guide === "object" && !Array.isArray(guide)
+      ? guide
+      : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function coordinateNumber_(value, min, max) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max
+    ? number
+    : null;
 }
 
 function validCacheKey_(value) {

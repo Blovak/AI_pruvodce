@@ -33,5 +33,6 @@ export type GuideContent = {
     key: string;
     hit: boolean;
     audioAvailable: boolean;
+    distanceMeters?: number;
   };
 };

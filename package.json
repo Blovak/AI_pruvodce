@@ -9,6 +9,7 @@
     "build:next": "next build",
     "build:pages": "next build && node scripts/package-pages.mjs",
     "start": "next start",
+    "test:cache": "node scripts/test-cache-radius.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

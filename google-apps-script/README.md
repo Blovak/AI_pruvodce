@@ -11,6 +11,14 @@ Listy:
 - `Chyby` — požadavky se stavem 400 a vyšším,
 - `Zpětná vazba` — připraveno pro další beta verzi.
 
+Cache výkladů:
+
+- při prvním seznámení s místem se použije nejbližší platný záznam do
+  800 metrů,
+- pokud v tomto okruhu žádný platný záznam není, server vytvoří nový výklad
+  pomocí AI a uloží ho jako další bod,
+- MP3 se vždy váže ke cache klíči skutečně nalezeného bodu.
+
 Soukromí:
 
 - přesná poloha se před zápisem zaokrouhlí na dvě desetinná místa,
