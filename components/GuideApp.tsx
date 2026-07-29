@@ -17,7 +17,7 @@ import {
   Sparkles,
   Volume2,
 } from "lucide-react";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { welcomeGuide } from "@/lib/fallback";
 import type { GuideContent, Place } from "@/lib/types";
 import { LocationSearch } from "@/components/LocationSearch";
@@ -26,6 +26,23 @@ import { apiUrl } from "@/lib/api-url";
 import { getSessionHeaders } from "@/lib/session";
 
 type Status = "idle" | "locating" | "loading" | "ready" | "error";
+
+type GuideOperation = {
+  id: number;
+  controller: AbortController;
+};
+
+const emptyGuide: GuideContent = {
+  placeName: "",
+  subtitle: "",
+  era: "",
+  overview: "",
+  story: "",
+  facts: [],
+  nearby: [],
+  question: "",
+  sourceUrls: [],
+};
 
 const silentAudio =
   "data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
@@ -57,19 +74,68 @@ export function GuideApp() {
   const [systemSpeaking, setSystemSpeaking] = useState(false);
   const speechRunRef = useRef(0);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const operationIdRef = useRef(0);
+  const guideControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     return () => {
+      guideControllerRef.current?.abort();
       speechRunRef.current += 1;
       window.speechSynthesis?.cancel();
     };
   }, []);
 
-  async function loadGuide(nextPlace: Place, nextQuestion?: string) {
+  const clearPreviousGuide = useCallback(() => {
+    guideControllerRef.current?.abort();
+    guideControllerRef.current = null;
+    operationIdRef.current += 1;
+    speechRunRef.current += 1;
+    window.speechSynthesis?.cancel();
+    utteranceRef.current = null;
+    setSystemSpeaking(false);
+    setGuide(welcomeGuide);
+    setPlace(null);
+    setStatus("idle");
+    setMessage("");
+  }, []);
+
+  function beginGuideOperation(
+    nextStatus: Extract<Status, "locating" | "loading">,
+    nextPlace: Place | null,
+  ): GuideOperation {
+    guideControllerRef.current?.abort();
+    const operation = {
+      id: operationIdRef.current + 1,
+      controller: new AbortController(),
+    };
+    operationIdRef.current = operation.id;
+    guideControllerRef.current = operation.controller;
+    setGuide(emptyGuide);
     setPlace(nextPlace);
-    setStatus("loading");
+    setStatus(nextStatus);
     setMessage("");
     stopSystemSpeech();
+    return operation;
+  }
+
+  function isCurrentOperation(operation: GuideOperation) {
+    return (
+      operation.id === operationIdRef.current &&
+      !operation.controller.signal.aborted
+    );
+  }
+
+  async function loadGuide(
+    nextPlace: Place,
+    nextQuestion?: string,
+    existingOperation?: GuideOperation,
+  ) {
+    const operation =
+      existingOperation ?? beginGuideOperation("loading", nextPlace);
+    if (!isCurrentOperation(operation)) return;
+
+    setPlace(nextPlace);
+    setStatus("loading");
     try {
       const response = await fetch(apiUrl("/api/guide"), {
         method: "POST",
@@ -81,12 +147,20 @@ export function GuideApp() {
           ...nextPlace,
           question: nextQuestion,
         }),
+        signal: operation.controller.signal,
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
+      if (!isCurrentOperation(operation)) return;
       setGuide(data);
       setStatus("ready");
     } catch (reason) {
+      if (
+        operation.controller.signal.aborted ||
+        operation.id !== operationIdRef.current
+      ) {
+        return;
+      }
       setStatus("error");
       setMessage(
         reason instanceof Error
@@ -98,13 +172,14 @@ export function GuideApp() {
 
   async function resolvePlace(
     coordinates: Pick<Place, "latitude" | "longitude" | "accuracy">,
+    signal?: AbortSignal,
   ): Promise<Place> {
     try {
       const response = await fetch(
         apiUrl(
           `/api/geocode?lat=${coordinates.latitude}&lon=${coordinates.longitude}`,
         ),
-        { headers: getSessionHeaders() },
+        { headers: getSessionHeaders(), signal },
       );
       const data = await response.json();
       if (response.ok && data.label) {
@@ -126,18 +201,26 @@ export function GuideApp() {
       setSearchOpen(true);
       return;
     }
-    setStatus("locating");
-    setMessage("");
+    const operation = beginGuideOperation("locating", null);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        if (!isCurrentOperation(operation)) return;
         const coordinates = {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           accuracy: position.coords.accuracy,
         };
-        await loadGuide(await resolvePlace(coordinates));
+        const nextPlace = await resolvePlace(
+          coordinates,
+          operation.controller.signal,
+        );
+        if (!isCurrentOperation(operation)) return;
+        await loadGuide(nextPlace, undefined, operation);
       },
       () => {
+        if (!isCurrentOperation(operation)) return;
+        guideControllerRef.current = null;
+        setGuide(welcomeGuide);
         setStatus("idle");
         setMessage(
           "Polohu se nepodařilo získat. Můžete ji povolit v prohlížeči nebo zadat místo ručně.",
@@ -159,7 +242,17 @@ export function GuideApp() {
     latitude: number;
     longitude: number;
   }) {
-    await loadGuide(await resolvePlace(coordinates));
+    const coordinatePlace: Place = {
+      ...coordinates,
+      label: `${coordinates.latitude.toFixed(5)}, ${coordinates.longitude.toFixed(5)}`,
+    };
+    const operation = beginGuideOperation("loading", coordinatePlace);
+    const nextPlace = await resolvePlace(
+      coordinates,
+      operation.controller.signal,
+    );
+    if (!isCurrentOperation(operation)) return;
+    await loadGuide(nextPlace, undefined, operation);
   }
 
   function spokenGuideText() {
@@ -254,6 +347,7 @@ export function GuideApp() {
         <MapView
           mapSelectionRequest={mapSelectionRequest}
           onRelocate={locate}
+          onSelectionStart={clearPreviousGuide}
           onSelectPoint={selectMapPoint}
           place={place}
         />
@@ -284,7 +378,7 @@ export function GuideApp() {
                   <span>Ověřuji místní souvislosti a zajímavosti.</span>
                 </div>
               </div>
-            ) : (
+            ) : status === "error" ? null : (
               <>
                 <p className="overview">{guide.overview}</p>
 
@@ -478,6 +572,7 @@ export function GuideApp() {
       <LocationSearch
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
+        onSearchStart={clearPreviousGuide}
         onSelect={(nextPlace) => loadGuide(nextPlace)}
       />
     </main>

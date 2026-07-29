@@ -19,11 +19,13 @@ export function MapView({
   place,
   mapSelectionRequest,
   onRelocate,
+  onSelectionStart,
   onSelectPoint,
 }: {
   place: Place | null;
   mapSelectionRequest: number;
   onRelocate: () => void;
+  onSelectionStart: () => void;
   onSelectPoint: (coordinates: Coordinates) => Promise<void>;
 }) {
   const panelRef = useRef<HTMLElement | null>(null);
@@ -119,12 +121,13 @@ export function MapView({
   const startPicking = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
+    onSelectionStart();
     const center = map.getCenter();
     pickingRef.current = true;
     setIsPicking(true);
     setDraft({ latitude: center.lat, longitude: center.lng });
     window.setTimeout(() => map.invalidateSize(), 0);
-  }, []);
+  }, [onSelectionStart]);
 
   useEffect(() => {
     if (mapSelectionRequest <= 0 || !mapReady) return;

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { LoaderCircle, MapPin, Search, X } from "lucide-react";
 import type { Place } from "@/lib/types";
 import { apiUrl } from "@/lib/api-url";
@@ -9,35 +9,51 @@ import { getSessionHeaders } from "@/lib/session";
 export function LocationSearch({
   open,
   onClose,
+  onSearchStart,
   onSelect,
 }: {
   open: boolean;
   onClose: () => void;
+  onSearchStart: () => void;
   onSelect: (place: Place) => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const searchControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => searchControllerRef.current?.abort();
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (query.trim().length < 2) return;
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
+    onSearchStart();
+    setResults([]);
     setLoading(true);
     setError("");
     try {
       const response = await fetch(
         apiUrl(`/api/geocode?q=${encodeURIComponent(query)}`),
-        { headers: getSessionHeaders() },
+        { headers: getSessionHeaders(), signal: controller.signal },
       );
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
+      if (controller.signal.aborted) return;
       setResults(data);
       if (!data.length) setError("Žádné místo jsme nenašli.");
     } catch (reason) {
+      if (controller.signal.aborted) return;
       setError(reason instanceof Error ? reason.message : "Vyhledávání selhalo.");
     } finally {
-      setLoading(false);
+      if (searchControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   }
 
