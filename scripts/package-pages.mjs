@@ -21,6 +21,10 @@ await build({
   target: ["es2022"],
   minify: true,
   sourcemap: false,
+  assetNames: "images/[name]-[hash]",
+  loader: {
+    ".png": "file",
+  },
   define: {
     "process.env.NEXT_PUBLIC_API_BASE_URL": JSON.stringify(apiBaseUrl),
   },

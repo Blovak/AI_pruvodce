@@ -15,7 +15,7 @@ export const welcomeGuide: GuideContent = {
     },
     {
       title: "Poslech za chůze",
-      text: "Celý příběh si můžete nechat přečíst přirozeným AI hlasem.",
+      text: "Celý příběh si můžete nechat přečíst systémovým hlasem zařízení.",
     },
     {
       title: "Místo pod kontrolou",

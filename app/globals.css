@@ -1,3 +1,5 @@
+@import "leaflet/dist/leaflet.css";
+
 :root {
   --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   --font-sans: Inter, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -146,15 +148,15 @@ button {
   background: #c8c3b2;
 }
 
-.map-frame {
+.interactive-map {
   width: 100%;
   height: 100%;
-  border: 0;
   filter: saturate(0.45) sepia(0.12) contrast(0.95);
 }
 
 .map-wash {
   position: absolute;
+  z-index: 450;
   inset: 0;
   pointer-events: none;
   background:
@@ -164,6 +166,7 @@ button {
 
 .map-placeholder {
   position: absolute;
+  z-index: 460;
   inset: 0;
   display: grid;
   place-content: center;
@@ -177,34 +180,16 @@ button {
   font-size: 20px;
 }
 
-.place-pin {
+.map-controls {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  background: rgba(201, 104, 69, 0.23);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 0 9px rgba(201, 104, 69, 0.1);
-  pointer-events: none;
-}
-
-.place-pin span {
-  width: 15px;
-  height: 15px;
-  background: var(--terracotta);
-  border: 3px solid #fff7e8;
-  border-radius: 50%;
-  box-shadow: 0 3px 10px rgba(70, 30, 17, 0.35);
-}
-
-.map-control {
-  position: absolute;
+  z-index: 500;
   top: 24px;
   left: 24px;
+  display: flex;
+  gap: 8px;
+}
+
+.map-controls button {
   padding: 10px 14px;
   display: flex;
   align-items: center;
@@ -218,8 +203,116 @@ button {
   font-weight: 700;
 }
 
+.map-controls button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.map-picker-pin {
+  position: absolute;
+  z-index: 520;
+  top: 50%;
+  left: 50%;
+  color: var(--terracotta);
+  filter: drop-shadow(0 5px 5px rgba(45, 22, 13, 0.35));
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.map-picker-pin::after {
+  position: absolute;
+  right: 50%;
+  bottom: -4px;
+  width: 10px;
+  height: 5px;
+  background: rgba(39, 24, 18, 0.28);
+  border-radius: 50%;
+  content: "";
+  filter: blur(2px);
+  transform: translateX(50%);
+}
+
+.map-picker-hint {
+  position: absolute;
+  z-index: 520;
+  top: calc(50% + 22px);
+  left: 50%;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--forest);
+  background: rgba(255, 251, 240, 0.94);
+  border-radius: 5px;
+  box-shadow: 0 8px 20px rgba(17, 31, 28, 0.18);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.map-picker-confirm {
+  position: absolute;
+  z-index: 530;
+  right: 24px;
+  bottom: 24px;
+  left: 24px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--forest);
+  background: rgba(255, 251, 240, 0.97);
+  border: 1px solid rgba(23, 59, 53, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 14px 35px rgba(17, 31, 28, 0.23);
+}
+
+.map-picker-confirm > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.map-picker-confirm strong {
+  font-family: var(--font-display), serif;
+  font-size: 15px;
+}
+
+.map-picker-confirm small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.map-picker-confirm button {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 5px;
+}
+
+.map-picker-cancel {
+  width: 38px;
+  color: var(--forest);
+  background: #e8e6dc;
+}
+
+.map-picker-submit {
+  padding: 0 13px;
+  color: #fffaf0;
+  background: var(--terracotta);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .map-credit {
   position: absolute;
+  z-index: 500;
   left: 10px;
   bottom: 5px;
   margin: 0;
@@ -320,10 +413,9 @@ button {
 }
 
 .audio-actions {
-  width: min(100%, 690px);
+  width: min(100%, 400px);
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: 1fr;
 }
 
 .system-voice-button {
@@ -374,22 +466,6 @@ button {
 .listen-button > svg {
   margin-left: auto;
   color: rgba(247, 242, 231, 0.55);
-}
-
-.native-audio {
-  display: none;
-  width: min(100%, 690px);
-  margin-top: 12px;
-}
-
-.native-audio.is-visible {
-  display: block;
-}
-
-@media (max-width: 680px) {
-  .audio-actions {
-    grid-template-columns: 1fr;
-  }
 }
 
 .story {
@@ -530,6 +606,58 @@ button {
 
 .sources a {
   color: var(--forest-light);
+}
+
+.change-place-card {
+  max-width: 690px;
+  margin-top: 34px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  background: #ebe4d6;
+  border: 1px solid rgba(23, 59, 53, 0.13);
+  border-radius: 8px;
+}
+
+.change-place-card h2 {
+  margin: 0;
+  font-family: var(--font-display), serif;
+  font-size: 21px;
+}
+
+.change-place-card > div > p:last-child {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.change-place-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.change-place-actions button {
+  min-height: 39px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--forest);
+  background: #faf6eb;
+  border: 1px solid rgba(23, 59, 53, 0.14);
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.change-place-actions button:last-child {
+  color: #fff9ec;
+  background: var(--terracotta);
+  border-color: transparent;
 }
 
 .loading-story {
@@ -852,6 +980,18 @@ button {
     border-left: 0;
   }
 
+  .change-place-card {
+    grid-template-columns: 1fr;
+  }
+
+  .change-place-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .change-place-actions button {
+    justify-content: center;
+  }
+
   .ask-bar {
     position: fixed;
     z-index: 10;
@@ -878,9 +1018,29 @@ button {
     min-height: 230px;
   }
 
-  .map-control {
+  .map-controls {
     top: 16px;
     left: 16px;
+    flex-direction: column;
+  }
+
+  .map-controls button {
+    padding: 9px 11px;
+  }
+
+  .map-picker-confirm {
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    grid-template-columns: 1fr auto;
+  }
+
+  .map-picker-submit {
+    grid-column: 1 / -1;
+  }
+
+  .change-place-actions {
+    grid-template-columns: 1fr;
   }
 
   .location-line small {

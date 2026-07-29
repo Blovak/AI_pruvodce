@@ -1,6 +1,8 @@
 # Místopis
 
-Beta verze osobního AI průvodce, který podle aktuální polohy představí historii, příběhy a zajímavosti místa. Výklad lze poslouchat česky pomocí OpenAI Text-to-Speech.
+Beta verze osobního AI průvodce, který podle zvoleného bodu představí historii,
+příběhy a zajímavosti místa. Výklad lze zdarma poslouchat pomocí systémového
+hlasu telefonu nebo počítače.
 
 ## Co beta umí
 
@@ -10,8 +12,9 @@ Beta verze osobního AI průvodce, který podle aktuální polohy představí hi
 - doporučit doložitelná místa v pěší vzdálenosti,
 - odpovědět na doplňující otázku k místu,
 - přečíst výklad zdarma systémovým hlasem telefonu nebo počítače,
-- vytvořit či načíst výklad jako MP3 s přirozeným AI hlasem,
-- uložit výklad a MP3 na jeden rok a při návratu na stejné místo je znovu použít,
+- kdykoli vyhledat další konkrétní místo i po zobrazení výsledku,
+- vybrat přesný bod posunem interaktivní mapy pod pevnou značkou,
+- uložit výklad na jeden rok a při návratu na stejné místo jej znovu použít,
 - anonymně měřit využití a chyby v soukromé Google tabulce.
 
 ## Lokální spuštění
@@ -47,8 +50,8 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - Do analytiky se GPS ukládá pouze po zaokrouhlení na dvě desetinná místa.
 - Cache míst používá souřadnice zaokrouhlené na čtyři desetinná místa
   (přibližně 11 metrů), aby poznala návrat na stejné místo.
-- Cache obsahuje vygenerovaný výklad a soukromý odkaz na MP3. Po jednom roce
-  se záznam přestane používat a aplikace vytvoří nový výklad i zvuk.
+- Cache obsahuje vygenerovaný výklad. Po jednom roce se záznam přestane používat
+  a aplikace vytvoří nový výklad.
 - Text doplňujících otázek se neukládá, pouze jejich délka.
 - Náhodný identifikátor relace neobsahuje e-mail, IP adresu ani identitu uživatele.
 - Hlas je syntetický, vytvořený AI; aplikace to u přehrávače výslovně uvádí.
@@ -60,8 +63,8 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - `app/api/*` — endpointy pro lokální vývoj v Next.js,
 - `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
-- `google-apps-script` — verzovaný endpoint pro analytiku, cache v Google
-  Sheets a soukromá MP3 na Google Disku,
+- `google-apps-script` — verzovaný endpoint pro analytiku a cache v Google
+  Sheets; historická MP3 z předchozí verze zůstávají soukromá,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
 
@@ -72,7 +75,6 @@ ukládání oblíbených míst a Realtime API pro živý rozhovor.
 ## Použité služby
 
 - [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text)
-- [OpenAI Text-to-Speech](https://developers.openai.com/api/docs/guides/text-to-speech)
 - [OpenStreetMap](https://www.openstreetmap.org/) a [Nominatim](https://nominatim.org/)
 
 Data OpenStreetMap jsou dostupná pod licencí ODbL.
@@ -90,7 +92,8 @@ Veřejná URL načítá přímo kořenový `index.html`; sestavení k němu vytv
 statické soubory `assets/app.js` a `assets/app.css`.
 
 Produkční backend používá zabezpečený Apps Script endpoint pro anonymizovanou
-analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI, platnost
-a odkaz na soukromé MP3 v adresáři `Místopis – uložené MP3`. Sdílený token je
-uložen pouze v Script Properties a v serverových secrets. Pokud Google úložiště
-selže, průvodce se pokusí požadavek dokončit přímo přes OpenAI.
+analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI a platnost;
+sloupce se staršími MP3 zůstávají kvůli historii. Nové uživatelské rozhraní MP3
+nenabízí ani negeneruje. Sdílený token je uložen pouze v Script Properties a v
+serverových secrets. Pokud Google úložiště selže, průvodce se pokusí požadavek
+dokončit přímo přes OpenAI.

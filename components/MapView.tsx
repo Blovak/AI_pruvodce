@@ -1,54 +1,232 @@
 "use client";
 
-import { Crosshair, MapPinned } from "lucide-react";
-import type { Place } from "@/lib/types";
+import {
+  Check,
+  Crosshair,
+  LoaderCircle,
+  MapPin,
+  MapPinned,
+  Move,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CircleMarker, Map as LeafletMap } from "leaflet";
+import type { Coordinates, Place } from "@/lib/types";
 
-function mapUrl(place: Place) {
-  const span = 0.009;
-  const bbox = [
-    place.longitude - span,
-    place.latitude - span * 0.65,
-    place.longitude + span,
-    place.latitude + span * 0.65,
-  ].join(",");
-
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(
-    bbox,
-  )}&layer=mapnik&marker=${place.latitude}%2C${place.longitude}`;
-}
+const defaultCenter: [number, number] = [49.8175, 15.473];
 
 export function MapView({
   place,
+  mapSelectionRequest,
   onRelocate,
+  onSelectPoint,
 }: {
   place: Place | null;
+  mapSelectionRequest: number;
   onRelocate: () => void;
+  onSelectPoint: (coordinates: Coordinates) => Promise<void>;
 }) {
+  const panelRef = useRef<HTMLElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markerRef = useRef<CircleMarker | null>(null);
+  const leafletRef = useRef<typeof import("leaflet") | null>(null);
+  const pickingRef = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [isPicking, setIsPicking] = useState(false);
+  const [draft, setDraft] = useState<Coordinates | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let map: LeafletMap | null = null;
+
+    void import("leaflet").then((leaflet) => {
+      if (cancelled || !containerRef.current) return;
+      leafletRef.current = leaflet;
+      const initialCenter: [number, number] = place
+        ? [place.latitude, place.longitude]
+        : defaultCenter;
+
+      map = leaflet
+        .map(containerRef.current, {
+          attributionControl: false,
+          zoomControl: false,
+        })
+        .setView(initialCenter, place ? 15 : 7);
+
+      leaflet.control.zoom({ position: "topright" }).addTo(map);
+      leaflet
+        .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "© OpenStreetMap",
+        })
+        .addTo(map);
+
+      map.on("move", () => {
+        if (!pickingRef.current || !map) return;
+        const center = map.getCenter();
+        setDraft({
+          latitude: center.lat,
+          longitude: center.lng,
+        });
+      });
+
+      mapRef.current = map;
+      setMapReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+      map?.remove();
+      mapRef.current = null;
+      markerRef.current = null;
+      leafletRef.current = null;
+    };
+    // Mapa se vytváří pouze jednou; změny místa řeší samostatný efekt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    pickingRef.current = isPicking;
+  }, [isPicking]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const leaflet = leafletRef.current;
+    if (!map || !leaflet) return;
+
+    markerRef.current?.remove();
+    markerRef.current = null;
+
+    if (place) {
+      markerRef.current = leaflet
+        .circleMarker([place.latitude, place.longitude], {
+          radius: 8,
+          color: "#fff7e8",
+          weight: 3,
+          fillColor: "#c96845",
+          fillOpacity: 1,
+        })
+        .addTo(map);
+
+      if (!pickingRef.current) {
+        map.setView([place.latitude, place.longitude], 16);
+      }
+    }
+  }, [place, mapReady]);
+
+  const startPicking = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    pickingRef.current = true;
+    setIsPicking(true);
+    setDraft({ latitude: center.lat, longitude: center.lng });
+    window.setTimeout(() => map.invalidateSize(), 0);
+  }, []);
+
+  useEffect(() => {
+    if (mapSelectionRequest <= 0 || !mapReady) return;
+    startPicking();
+    panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [mapReady, mapSelectionRequest, startPicking]);
+
+  function cancelPicking() {
+    pickingRef.current = false;
+    setIsPicking(false);
+    setDraft(null);
+    if (place) {
+      mapRef.current?.setView([place.latitude, place.longitude], 16);
+    }
+  }
+
+  async function confirmPoint() {
+    if (!draft || confirming) return;
+    setConfirming(true);
+    try {
+      await onSelectPoint(draft);
+      pickingRef.current = false;
+      setIsPicking(false);
+      setDraft(null);
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   return (
-    <section className="map-panel" aria-label="Mapa aktuální polohy">
-      {place ? (
-        <iframe
-          className="map-frame"
-          src={mapUrl(place)}
-          title={`Mapa místa ${place.label}`}
-          loading="lazy"
-        />
-      ) : (
+    <section
+      className={`map-panel${isPicking ? " is-picking" : ""}`}
+      aria-label="Mapa pro výběr místa"
+      ref={panelRef}
+    >
+      <div className="interactive-map" ref={containerRef} />
+
+      {!mapReady && (
         <div className="map-placeholder">
           <MapPinned size={40} strokeWidth={1.4} />
-          <span>Čekám na vaši polohu</span>
+          <span>Načítám mapu</span>
         </div>
       )}
+
       <div className="map-wash" />
-      {place && (
-        <div className="place-pin" aria-hidden="true">
-          <span />
+
+      {isPicking && (
+        <>
+          <div className="map-picker-pin" aria-hidden="true">
+            <MapPin size={42} fill="currentColor" />
+          </div>
+          <div className="map-picker-hint">
+            <Move size={16} />
+            Posuňte mapu pod pevným bodem
+          </div>
+        </>
+      )}
+
+      <div className="map-controls">
+        <button onClick={onRelocate} type="button">
+          <Crosshair size={17} />
+          Moje poloha
+        </button>
+        <button disabled={!mapReady} onClick={startPicking} type="button">
+          <MapPin size={17} />
+          Vybrat bod
+        </button>
+      </div>
+
+      {isPicking && draft && (
+        <div className="map-picker-confirm" role="status">
+          <div>
+            <strong>Je bod přesně na místě zájmu?</strong>
+            <small>
+              {draft.latitude.toFixed(5)}, {draft.longitude.toFixed(5)}
+            </small>
+          </div>
+          <button
+            aria-label="Zrušit výběr bodu"
+            className="map-picker-cancel"
+            disabled={confirming}
+            onClick={cancelPicking}
+            type="button"
+          >
+            <X size={18} />
+          </button>
+          <button
+            className="map-picker-submit"
+            disabled={confirming}
+            onClick={confirmPoint}
+            type="button"
+          >
+            {confirming ? (
+              <LoaderCircle className="spin" size={17} />
+            ) : (
+              <Check size={17} />
+            )}
+            Použít tento bod
+          </button>
         </div>
       )}
-      <button className="map-control" onClick={onRelocate} type="button">
-        <Crosshair size={17} />
-        Moje poloha
-      </button>
+
       <p className="map-credit">
         © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>
       </p>
