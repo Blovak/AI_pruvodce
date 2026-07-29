@@ -55,6 +55,8 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 
 ## Architektura připravená na rozvoj
 
+- `index.html` — přímý vstup veřejné statické aplikace na GitHub Pages,
+- `client/index.tsx` — připojení React aplikace k elementu v `index.html`,
 - `app/api/*` — endpointy pro lokální vývoj v Next.js,
 - `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
@@ -84,6 +86,8 @@ Veřejné rozhraní se automaticky publikuje přes GitHub Actions na:
 GitHub Pages je čistě statický hosting. OpenAI klíč proto zůstává v oddělené
 serverové aplikaci a veřejný frontend volá pouze její API. Proměnná
 `NEXT_PUBLIC_API_BASE_URL` obsahuje veřejnou adresu backendu, nikdy API klíč.
+Veřejná URL načítá přímo kořenový `index.html`; sestavení k němu vytvoří pouze
+statické soubory `assets/app.js` a `assets/app.css`.
 
 Produkční backend používá zabezpečený Apps Script endpoint pro anonymizovanou
 analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI, platnost
