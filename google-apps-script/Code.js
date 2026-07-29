@@ -162,6 +162,7 @@ function cacheGet_(spreadsheetId, rawRequest) {
   }
 
   const requestedRadius = Number(request.maxDistanceMeters);
+  const requiredModelPrefix = cleanText_(request.requiredModelPrefix, 40);
   const maxDistanceMeters = Math.min(
     Math.max(
       Number.isFinite(requestedRadius)
@@ -183,6 +184,7 @@ function cacheGet_(spreadsheetId, rawRequest) {
           longitude,
           maxDistanceMeters,
           false,
+          requiredModelPrefix,
         )
       : findValidCacheRow_(sheet, key, false);
     if (!match) return { ok: true, hit: false };
@@ -413,6 +415,7 @@ function findNearestValidCacheRow_(
   longitude,
   maxDistanceMeters,
   requireAudio,
+  requiredModelPrefix,
 ) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
@@ -426,6 +429,12 @@ function findNearestValidCacheRow_(
     const values = rows[index];
     const validUntil = values[1] instanceof Date ? values[1].getTime() : 0;
     if (validUntil <= now || (requireAudio && !values[8])) continue;
+    if (
+      requiredModelPrefix &&
+      !String(values[9] || "").startsWith(requiredModelPrefix)
+    ) {
+      continue;
+    }
 
     const rowLatitude = coordinateNumber_(values[3], -90, 90);
     const rowLongitude = coordinateNumber_(values[4], -180, 180);

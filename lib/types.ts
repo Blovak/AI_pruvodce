@@ -32,7 +32,6 @@ export type GuideContent = {
   cache?: {
     key: string;
     hit: boolean;
-    audioAvailable: boolean;
     distanceMeters?: number;
   };
 };

@@ -8,7 +8,7 @@ hlasu telefonu nebo počítače.
 
 - získat přesnou polohu z prohlížeče nebo vyhledat místo ručně,
 - zobrazit okolí na mapě OpenStreetMap,
-- vytvořit česky psaný, zdrojovaný výklad pomocí Responses API,
+- vytvořit česky psaný, zdrojovaný výklad pomocí DeepSeek API,
 - doporučit doložitelná místa v pěší vzdálenosti,
 - odpovědět na doplňující otázku k místu,
 - přečíst výklad zdarma systémovým hlasem telefonu nebo počítače,
@@ -19,7 +19,7 @@ hlasu telefonu nebo počítače.
 
 ## Lokální spuštění
 
-Požadavky: Node.js 22+ a OpenAI API klíč.
+Požadavky: Node.js 22+ a DeepSeek API klíč.
 
 ```bash
 npm install
@@ -29,7 +29,7 @@ cp .env.example .env.local
 Do `.env.local` vložte svůj klíč:
 
 ```dotenv
-OPENAI_API_KEY=sk-proj-...
+DEEPSEEK_API_KEY=sk-...
 ```
 
 Potom spusťte:
@@ -62,19 +62,22 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - `client/index.tsx` — připojení React aplikace k elementu v `index.html`,
 - `app/api/*` — endpointy pro lokální vývoj v Next.js,
 - `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
+- `lib/deepseek.ts` — DeepSeek klient, validace JSON výstupu a dohledání
+  zdrojových podkladů z české Wikipedie,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
 - `google-apps-script` — verzovaný endpoint pro analytiku a cache v Google
   Sheets; historická MP3 z předchozí verze zůstávají soukromá,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
 
-Modely a hlas lze měnit pomocí proměnných prostředí bez zásahu do kódu. Další
+Model DeepSeek lze měnit pomocí proměnné prostředí bez zásahu do kódu. Další
 vhodné kroky jsou uživatelské trasy, více jazyků, redakčně spravované zdroje,
 ukládání oblíbených míst a Realtime API pro živý rozhovor.
 
 ## Použité služby
 
-- [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text)
+- [DeepSeek API](https://api-docs.deepseek.com/)
+- [MediaWiki API](https://www.mediawiki.org/wiki/API:Main_page)
 - [OpenStreetMap](https://www.openstreetmap.org/) a [Nominatim](https://nominatim.org/)
 
 Data OpenStreetMap jsou dostupná pod licencí ODbL.
@@ -85,7 +88,7 @@ Veřejné rozhraní se automaticky publikuje přes GitHub Actions na:
 
 `https://blovak.github.io/AI_pruvodce/`
 
-GitHub Pages je čistě statický hosting. OpenAI klíč proto zůstává v oddělené
+GitHub Pages je čistě statický hosting. DeepSeek klíč proto zůstává v oddělené
 serverové aplikaci a veřejný frontend volá pouze její API. Proměnná
 `NEXT_PUBLIC_API_BASE_URL` obsahuje veřejnou adresu backendu, nikdy API klíč.
 Veřejná URL načítá přímo kořenový `index.html`; sestavení k němu vytvoří pouze
@@ -96,4 +99,4 @@ analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI a pl
 sloupce se staršími MP3 zůstávají kvůli historii. Nové uživatelské rozhraní MP3
 nenabízí ani negeneruje. Sdílený token je uložen pouze v Script Properties a v
 serverových secrets. Pokud Google úložiště selže, průvodce se pokusí požadavek
-dokončit přímo přes OpenAI.
+dokončit přímo přes DeepSeek.

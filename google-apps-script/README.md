@@ -15,9 +15,12 @@ Cache výkladů:
 
 - při prvním seznámení s místem se použije nejbližší platný záznam do
   800 metrů,
+- DeepSeek verze používá pouze cache řádky, jejichž textový model začíná
+  `deepseek-`; historické výklady jiných poskytovatelů zůstávají jako archiv,
 - pokud v tomto okruhu žádný platný záznam není, server vytvoří nový výklad
   pomocí AI a uloží ho jako další bod,
-- MP3 se vždy váže ke cache klíči skutečně nalezeného bodu.
+- Historické sloupce MP3 zůstávají v tabulce kvůli starším datům. Aktuální
+  DeepSeek verze aplikace zvukové soubory nevytváří a používá systémový hlas.
 
 Soukromí:
 

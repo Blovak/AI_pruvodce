@@ -10,13 +10,14 @@
     "build:pages": "node scripts/package-pages.mjs",
     "start": "next start",
     "test:cache": "node scripts/test-cache-radius.mjs",
+    "test:deepseek": "node scripts/test-deepseek.mjs",
+    "test:deepseek:live": "node scripts/smoke-deepseek-live.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
     "lucide-react": "1.27.0",
     "next": "^16.2.12",
-    "openai": "6.49.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

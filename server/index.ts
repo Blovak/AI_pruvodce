@@ -1,10 +1,11 @@
-import OpenAI from "openai";
+import {
+  createDeepSeekGuide,
+  defaultDeepSeekModel,
+} from "../lib/deepseek";
 
 type WorkerEnv = {
-  OPENAI_API_KEY?: string;
-  OPENAI_TEXT_MODEL?: string;
-  OPENAI_TTS_MODEL?: string;
-  OPENAI_TTS_VOICE?: string;
+  DEEPSEEK_API_KEY?: string;
+  DEEPSEEK_MODEL?: string;
   GOOGLE_LOG_URL?: string;
   GOOGLE_LOG_TOKEN?: string;
 };
@@ -29,7 +30,6 @@ type ExecutionContext = {
 
 type CachedGuide = {
   guide: Record<string, unknown>;
-  audioAvailable: boolean;
   cacheKey?: string;
   distanceMeters?: number;
 };
@@ -40,64 +40,6 @@ const allowedOrigins = new Set([
   "https://blovak.github.io",
   "http://localhost:3000",
 ]);
-
-const guideSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: [
-    "placeName",
-    "subtitle",
-    "era",
-    "overview",
-    "story",
-    "facts",
-    "nearby",
-    "question",
-    "sourceUrls",
-  ],
-  properties: {
-    placeName: { type: "string" },
-    subtitle: { type: "string" },
-    era: { type: "string" },
-    overview: { type: "string" },
-    story: { type: "string" },
-    facts: {
-      type: "array",
-      minItems: 3,
-      maxItems: 3,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["title", "text"],
-        properties: {
-          title: { type: "string" },
-          text: { type: "string" },
-        },
-      },
-    },
-    nearby: {
-      type: "array",
-      minItems: 0,
-      maxItems: 4,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["name", "distance", "kind"],
-        properties: {
-          name: { type: "string" },
-          distance: { type: "string" },
-          kind: { type: "string" },
-        },
-      },
-    },
-    question: { type: "string" },
-    sourceUrls: {
-      type: "array",
-      maxItems: 5,
-      items: { type: "string" },
-    },
-  },
-} as const;
 
 function cors(origin: string | null) {
   return {
@@ -152,28 +94,6 @@ async function googleRequest<T>(
     throw new Error(`Google storage: ${result.error || "unknown_error"}`);
   }
   return result;
-}
-
-function base64ToBytes(value: string) {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function bytesToBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 24576;
-  let value = "";
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize);
-    let binary = "";
-    for (const byte of chunk) binary += String.fromCharCode(byte);
-    value += btoa(binary);
-  }
-  return value;
 }
 
 async function geocode(
@@ -269,7 +189,7 @@ async function guide(
   analytics.latitude = latitude;
   analytics.longitude = longitude;
   analytics.questionLength = userQuestion.length;
-  analytics.model = env.OPENAI_TEXT_MODEL || "gpt-5.6-sol";
+  analytics.model = env.DEEPSEEK_MODEL || defaultDeepSeekModel;
 
   if (!userQuestion) {
     try {
@@ -278,6 +198,7 @@ async function guide(
         latitude,
         longitude,
         maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
+        requiredModelPrefix: "deepseek-",
       });
       if (cached?.guide) {
         const matchedKey = cached.cacheKey || key;
@@ -291,7 +212,6 @@ async function guide(
             cache: {
               key: matchedKey,
               hit: true,
-              audioAvailable: Boolean(cached.audioAvailable),
               distanceMeters: cached.distanceMeters,
             },
           },
@@ -305,52 +225,26 @@ async function guide(
     }
   }
 
-  if (!env.OPENAI_API_KEY) {
+  if (!env.DEEPSEEK_API_KEY) {
     return json(
-      { error: "Na serveru chybí OPENAI_API_KEY." },
+      { error: "Na serveru chybí DEEPSEEK_API_KEY." },
       503,
       origin,
     );
   }
 
-  const client = new OpenAI({
-    apiKey: env.OPENAI_API_KEY,
-    dangerouslyAllowBrowser: true,
-  });
-  const result = await client.responses.create({
-    model: env.OPENAI_TEXT_MODEL || "gpt-5.6-sol",
-    instructions: `Role: Jsi Místopis, zvídavý a spolehlivý český průvodce místní historií.
-
-Cíl: Vytvoř krátký mobilní výklad k přesnému místu. Uživatel má mít pocit, že se na známé okolí dívá novýma očima.
-
-Pravidla:
-- Piš přirozeně česky, konkrétně a bez turistických klišé.
-- Ověř historická tvrzení pomocí webového vyhledávání. Upřednostni obce, památkové katalogy, muzea a encyklopedické zdroje.
-- Nevymýšlej si přesné události, osoby ani vzdálenosti. Když pro přesný bod nejsou podklady, popiš spolehlivě širší okolí a přiznej rozsah.
-- story má 110–170 slov, overview nejvýše 35 slov, každá zajímavost nejvýše 35 slov.
-- sourceUrls obsahuje pouze skutečně použité veřejné URL.
-- era je krátký štítek velkými písmeny.
-- nearby obsahuje jen doložitelné cíle v rozumné pěší vzdálenosti.
-
-Výstup musí přesně odpovídat JSON schématu.`,
-    input: `Poloha: ${location}
-Souřadnice: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}
-${userQuestion ? `Doplňující otázka uživatele: ${userQuestion}` : "Připrav první seznámení s místem."}`,
-    tools: [{ type: "web_search" }],
-    include: ["web_search_call.action.sources"],
-    reasoning: { effort: "low" },
-    text: {
-      verbosity: "low",
-      format: {
-        type: "json_schema",
-        name: "location_guide",
-        strict: true,
-        schema: guideSchema,
-      },
+  const generated = await createDeepSeekGuide(
+    {
+      apiKey: env.DEEPSEEK_API_KEY,
+      model: env.DEEPSEEK_MODEL,
     },
-  });
-
-  const generated = JSON.parse(result.output_text) as Record<string, unknown>;
+    {
+      latitude,
+      longitude,
+      label: location,
+      question: userQuestion || undefined,
+    },
+  );
   if (userQuestion) return json(generated, 200, origin);
 
   try {
@@ -371,122 +265,11 @@ ${userQuestion ? `Doplňující otázka uživatele: ${userQuestion}` : "Připrav
   return json(
     {
       ...generated,
-      cache: { key, hit: false, audioAvailable: false },
+      cache: { key, hit: false },
     },
     200,
     origin,
   );
-}
-
-async function speech(
-  request: Request,
-  env: WorkerEnv,
-  origin: string | null,
-  analytics: Analytics,
-) {
-  const body = (await request.json()) as {
-    text?: string;
-    cacheKey?: string;
-    placeName?: string;
-  };
-  const text = String(body.text || "").trim();
-  const key = String(body.cacheKey || "").trim();
-  const placeName = String(body.placeName || "Místopis").trim().slice(0, 160);
-  analytics.inputChars = text.length;
-  analytics.model = env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts";
-  if (!text || text.length > 4096) {
-    return json(
-      { error: "Text pro poslech musí mít 1 až 4096 znaků." },
-      400,
-      origin,
-    );
-  }
-
-  if (/^-?\d{1,2}\.\d{4},-?\d{1,3}\.\d{4}$/.test(key)) {
-    try {
-      const cached = await googleRequest<{
-        audioBase64?: string;
-        mimeType?: string;
-      }>(env, "cacheGetAudio", { cacheKey: key });
-      if (cached?.audioBase64) {
-        analytics.detail = "cache_hit";
-        return new Response(base64ToBytes(cached.audioBase64), {
-          status: 200,
-          headers: {
-            "Content-Type": cached.mimeType || "audio/mpeg",
-            "Cache-Control": "private, max-age=3600",
-            "X-Mistopis-Cache": "hit",
-            ...cors(origin),
-          },
-        });
-      }
-    } catch (error) {
-      console.error("Audio cache lookup failed", error);
-      analytics.detail = "cache_lookup_failed";
-    }
-  }
-
-  if (!env.OPENAI_API_KEY) {
-    return json(
-      { error: "Na serveru chybí OPENAI_API_KEY." },
-      503,
-      origin,
-    );
-  }
-
-  const client = new OpenAI({
-    apiKey: env.OPENAI_API_KEY,
-    dangerouslyAllowBrowser: true,
-  });
-  const audio = await client.audio.speech.create({
-    model: env.OPENAI_TTS_MODEL || "gpt-4o-mini-tts",
-    voice:
-      (env.OPENAI_TTS_VOICE as
-        | "alloy"
-        | "ash"
-        | "ballad"
-        | "coral"
-        | "echo"
-        | "fable"
-        | "nova"
-        | "onyx"
-        | "sage"
-        | "shimmer"
-        | "verse"
-        | "marin"
-        | "cedar") || "marin",
-    input: text,
-    instructions:
-      "Mluv přirozenou, kultivovanou češtinou. Klidné tempo, vřelý dokumentární tón, lehká zvědavost. Správně vyslovuj česká místní jména.",
-    response_format: "mp3",
-  });
-
-  const audioBuffer = await audio.arrayBuffer();
-  if (key) {
-    try {
-      await googleRequest(env, "cacheSaveAudio", {
-        cacheKey: key,
-        placeName,
-        audioBase64: bytesToBase64(audioBuffer),
-        mimeType: "audio/mpeg",
-        ttsModel: analytics.model,
-      });
-      analytics.detail = "cache_created";
-    } catch (error) {
-      console.error("Audio cache save failed", error);
-      analytics.detail = "cache_save_failed";
-    }
-  }
-
-  return new Response(audioBuffer, {
-    status: 200,
-    headers: {
-      "Content-Type": "audio/mpeg",
-      "Cache-Control": "private, max-age=3600",
-      "X-Mistopis-Cache": "miss",
-      ...cors(origin),
-    },
-  });
 }
 
 async function logUsage(env: WorkerEnv, analytics: Analytics) {
@@ -535,8 +318,6 @@ export default {
         response = await geocode(url, origin, analytics);
       } else if (request.method === "POST" && url.pathname === "/api/guide") {
         response = await guide(request, env, origin, analytics);
-      } else if (request.method === "POST" && url.pathname === "/api/speech") {
-        response = await speech(request, env, origin, analytics);
       } else {
         response = json({ error: "Endpoint neexistuje." }, 404, origin);
       }

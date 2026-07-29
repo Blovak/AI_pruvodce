@@ -33,6 +33,7 @@ function row({
   valid = validUntil,
   guide = { placeName: key },
   audio = "",
+  model = "",
 }) {
   return [
     new Date(now),
@@ -44,7 +45,7 @@ function row({
     JSON.stringify(guide),
     "",
     audio,
-    "",
+    model,
     "",
     new Date(now),
     0,
@@ -155,5 +156,28 @@ const audioOnly = findNearestValidCacheRow_(
   true,
 );
 assert.equal(audioOnly.values[2], "with-audio");
+
+const deepSeekOnly = findNearestValidCacheRow_(
+  sheet([
+    row({
+      key: "legacy-near",
+      latitude: 50.0001,
+      longitude,
+      model: "gpt-5.6-sol",
+    }),
+    row({
+      key: "deepseek-farther",
+      latitude: 50.0002,
+      longitude,
+      model: "deepseek-v4-flash",
+    }),
+  ]),
+  latitude,
+  longitude,
+  800,
+  false,
+  "deepseek-",
+);
+assert.equal(deepSeekOnly.values[2], "deepseek-farther");
 
 console.log("Cache radius tests passed.");
