@@ -13,6 +13,8 @@ type Source = {
   title: string;
   url: string;
   extract: string;
+  latitude: number;
+  longitude: number;
 };
 
 type WikipediaPage = {
@@ -21,6 +23,10 @@ type WikipediaPage = {
   extract?: string;
   fullurl?: string;
   index?: number;
+  coordinates?: Array<{
+    lat?: number;
+    lon?: number;
+  }>;
 };
 
 const guideShape = {
@@ -35,7 +41,7 @@ const guideShape = {
     { title: "Zajímavost 3", text: "Text nejvýše 35 slov." },
   ],
   nearby: [
-    { name: "Doložený blízký cíl", distance: "přibližně 500 m", kind: "památka" },
+    { sourceIndex: 2, kind: "památka" },
   ],
   question: "Krátká navazující otázka pro uživatele.",
   sourceUrls: [],
@@ -49,9 +55,9 @@ function wikipediaUrl(latitude: number, longitude: number, radius: number) {
   url.searchParams.set("generator", "geosearch");
   url.searchParams.set("ggscoord", `${latitude}|${longitude}`);
   url.searchParams.set("ggsradius", String(radius));
-  url.searchParams.set("ggslimit", "5");
+  url.searchParams.set("ggslimit", "20");
   url.searchParams.set("ggsnamespace", "0");
-  url.searchParams.set("prop", "extracts|info");
+  url.searchParams.set("prop", "extracts|info|coordinates");
   url.searchParams.set("exintro", "1");
   url.searchParams.set("explaintext", "1");
   url.searchParams.set("inprop", "url");
@@ -80,12 +86,20 @@ async function nearbySources(latitude: number, longitude: number) {
             page,
           ): page is WikipediaPage &
             Required<Pick<WikipediaPage, "title" | "fullurl">> =>
-            Boolean(page.title && page.fullurl && page.extract),
+            Boolean(
+              page.title &&
+                page.fullurl &&
+                page.extract &&
+                Number.isFinite(page.coordinates?.[0]?.lat) &&
+                Number.isFinite(page.coordinates?.[0]?.lon),
+            ),
         )
         .map((page) => ({
           title: page.title,
           url: page.fullurl,
           extract: String(page.extract).slice(0, MAX_SOURCE_CHARS),
+          latitude: Number(page.coordinates?.[0]?.lat),
+          longitude: Number(page.coordinates?.[0]?.lon),
         }));
 
       if (sources.length > 0) return sources;
@@ -101,7 +115,105 @@ function text(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-function normalizeGuide(value: unknown, sources: Source[]): GuideContent {
+function distanceMeters(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const earthRadiusMeters = 6371008.8;
+  const toRadians = Math.PI / 180;
+  const latitudeDelta = (latitudeB - latitudeA) * toRadians;
+  const longitudeDelta = (longitudeB - longitudeA) * toRadians;
+  const latitudeARadians = latitudeA * toRadians;
+  const latitudeBRadians = latitudeB * toRadians;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitudeARadians) *
+      Math.cos(latitudeBRadians) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return (
+    2 *
+    earthRadiusMeters *
+    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  );
+}
+
+function approximateDistance(value: number) {
+  if (value < 1000) {
+    const rounded = Math.max(10, Math.round(value / 10) * 10);
+    return `přibližně ${rounded} m`;
+  }
+  return `přibližně ${(value / 1000).toFixed(1).replace(".", ",")} km`;
+}
+
+function normalizeNearby(
+  value: unknown[],
+  sources: Source[],
+  origin: { latitude: number; longitude: number },
+) {
+  const selected = new Map<number, string>();
+  for (const item of value.slice(0, 4)) {
+    if (!item || typeof item !== "object") continue;
+    const place = item as Record<string, unknown>;
+    const sourceIndex = Number(place.sourceIndex);
+    if (
+      Number.isInteger(sourceIndex) &&
+      sourceIndex >= 1 &&
+      sourceIndex <= sources.length &&
+      !selected.has(sourceIndex) &&
+      distanceMeters(
+        origin.latitude,
+        origin.longitude,
+        sources[sourceIndex - 1].latitude,
+        sources[sourceIndex - 1].longitude,
+      ) >= 30
+    ) {
+      selected.set(sourceIndex, text(place.kind, "místní zajímavost"));
+    }
+  }
+
+  for (let sourceIndex = 1; sourceIndex <= sources.length; sourceIndex += 1) {
+    if (selected.size >= 4) break;
+    if (
+      !selected.has(sourceIndex) &&
+      distanceMeters(
+        origin.latitude,
+        origin.longitude,
+        sources[sourceIndex - 1].latitude,
+        sources[sourceIndex - 1].longitude,
+      ) >= 30
+    ) {
+      selected.set(sourceIndex, "místní zajímavost");
+    }
+  }
+
+  return Array.from(selected.entries()).flatMap(([sourceIndex, kind]) => {
+    const source = sources[sourceIndex - 1];
+    const distance = distanceMeters(
+      origin.latitude,
+      origin.longitude,
+      source.latitude,
+      source.longitude,
+    );
+    if (distance < 30) return [];
+    return [
+      {
+        name: source.title,
+        distance: approximateDistance(distance),
+        kind,
+        latitude: source.latitude,
+        longitude: source.longitude,
+      },
+    ];
+  });
+}
+
+function normalizeGuide(
+  value: unknown,
+  sources: Source[],
+  origin: { latitude: number; longitude: number },
+): GuideContent {
   if (!value || typeof value !== "object") {
     throw new Error("DeepSeek vrátil neplatný JSON.");
   }
@@ -134,21 +246,9 @@ function normalizeGuide(value: unknown, sources: Source[]): GuideContent {
     overview: text(raw.overview),
     story: text(raw.story),
     facts: normalizedFacts,
-    nearby: nearby.slice(0, 4).flatMap((item) => {
-      if (!item || typeof item !== "object") return [];
-      const place = item as Record<string, unknown>;
-      const name = text(place.name);
-      if (!name) return [];
-      return [
-        {
-          name,
-          distance: text(place.distance, "v okolí"),
-          kind: text(place.kind, "zajímavé místo"),
-        },
-      ];
-    }),
+    nearby: normalizeNearby(nearby, sources, origin),
     question: text(raw.question, "Co dalšího vás na tomto místě zajímá?"),
-    sourceUrls: sources.map((source) => source.url),
+    sourceUrls: sources.slice(0, 5).map((source) => source.url),
   };
 }
 
@@ -165,9 +265,10 @@ export async function createDeepSeekGuide(
   const sourceContext =
     sources.length > 0
       ? sources
+          .slice(0, 5)
           .map(
             (source, index) =>
-              `[${index + 1}] ${source.title}\nURL: ${source.url}\n${source.extract}`,
+              `[${index + 1}] ${source.title}\nSouřadnice: ${source.latitude.toFixed(6)}, ${source.longitude.toFixed(6)}\nURL: ${source.url}\n${source.extract}`,
           )
           .join("\n\n")
       : "Pro bezprostřední okolí nebyl nalezen vhodný článek. Neuváděj nedoložené přesné historické údaje a otevřeně popiš širší kontext.";
@@ -184,7 +285,9 @@ Pravidla:
 - story má 110–170 slov, overview nejvýše 35 slov, každá zajímavost nejvýše 35 slov.
 - facts musí mít přesně 3 položky a nearby nejvýše 4 položky.
 - sourceUrls vrať jako prázdné pole; skutečné URL bezpečně doplní server.
-- nearby obsahuje jen cíle doložené v podkladech. Vzdálenost označ jako přibližnou.
+- nearby obsahuje jen jiné cíle z očíslovaných podkladů, ne právě popisované místo.
+- Každá nearby položka používá sourceIndex odkazující na číslo podkladu a stručný kind.
+- Nevkládej do nearby název, vzdálenost ani souřadnice; ty bezpečně doplní server.
 
 Příklad požadované JSON struktury:
 ${JSON.stringify(guideShape)}`;
@@ -212,7 +315,8 @@ ${sourceContext}`;
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
-          max_tokens: 1800,
+          thinking: { type: "disabled" },
+          max_tokens: 3200,
           temperature: 0.3,
           stream: false,
         }),
@@ -235,7 +339,7 @@ ${sourceContext}`;
       }
       const content = choice?.message?.content?.trim();
       if (!content) throw new Error("DeepSeek vrátil prázdnou odpověď.");
-      return normalizeGuide(JSON.parse(content), sources);
+      return normalizeGuide(JSON.parse(content), sources, input);
     } catch (error) {
       lastError = error;
     }

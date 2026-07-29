@@ -10,6 +10,8 @@ hlasu telefonu nebo počítače.
 - zobrazit okolí na mapě OpenStreetMap,
 - vytvořit česky psaný, zdrojovaný výklad pomocí DeepSeek API,
 - doporučit doložitelná místa v pěší vzdálenosti,
+- ukázat směr k doporučeným místům šipkami, které se otáčejí podle kompasu
+  telefonu,
 - odpovědět na doplňující otázku k místu,
 - přečíst výklad zdarma systémovým hlasem telefonu nebo počítače,
 - kdykoli vyhledat další konkrétní místo i po zobrazení výsledku,
@@ -41,12 +43,16 @@ npm run dev
 Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 
 > Geolokace v produkci vyžaduje HTTPS. Na `localhost` funguje i bez něj.
+> iPhone vyžaduje pro kompas jednorázové potvrzení tlačítkem v sekci
+> „Objevte v okolí“.
 
 ## Bezpečnost a soukromí
 
 - API klíč zůstává pouze v serverovém prostředí a neposílá se do prohlížeče.
 - `.env*` soubory se skutečnými hodnotami jsou ignorované Gitem.
 - Souřadnice se používají pro reverzní geokódování a vytvoření výkladu.
+- Orientace telefonu se zpracovává pouze lokálně v prohlížeči a nikam se
+  neodesílá.
 - Do analytiky se GPS ukládá pouze po zaokrouhlení na dvě desetinná místa.
 - Cache míst používá souřadnice zaokrouhlené na čtyři desetinná místa
   (přibližně 11 metrů), aby poznala návrat na stejné místo.

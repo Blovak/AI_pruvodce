@@ -35,6 +35,7 @@ type CachedGuide = {
 };
 
 const GUIDE_CACHE_RADIUS_METERS = 800;
+const GUIDE_CACHE_FORMAT = "nearby-directions-v1";
 
 const allowedOrigins = new Set([
   "https://blovak.github.io",
@@ -190,6 +191,7 @@ async function guide(
   analytics.longitude = longitude;
   analytics.questionLength = userQuestion.length;
   analytics.model = env.DEEPSEEK_MODEL || defaultDeepSeekModel;
+  const cacheModel = `${analytics.model}:${GUIDE_CACHE_FORMAT}`;
 
   if (!userQuestion) {
     try {
@@ -198,7 +200,7 @@ async function guide(
         latitude,
         longitude,
         maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
-        requiredModelPrefix: "deepseek-",
+        requiredModelPrefix: cacheModel,
       });
       if (cached?.guide) {
         const matchedKey = cached.cacheKey || key;
@@ -254,7 +256,7 @@ async function guide(
       longitude: Number(longitude.toFixed(4)),
       place: location,
       guide: generated,
-      textModel: analytics.model,
+      textModel: cacheModel,
     });
     analytics.detail = "cache_created";
   } catch (error) {

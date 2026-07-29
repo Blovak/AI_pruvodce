@@ -17,6 +17,8 @@ export type NearbyPlace = {
   name: string;
   distance: string;
   kind: string;
+  latitude: number;
+  longitude: number;
 };
 
 export type GuideContent = {

@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  ArrowUp,
   BookOpenText,
   ChevronDown,
   CircleStop,
@@ -30,6 +31,16 @@ type Status = "idle" | "locating" | "loading" | "ready" | "error";
 type GuideOperation = {
   id: number;
   controller: AbortController;
+};
+
+type CompassStatus = "idle" | "active" | "denied" | "unsupported";
+
+type CompassOrientationEvent = DeviceOrientationEvent & {
+  webkitCompassHeading?: number;
+};
+
+type PermissionAwareOrientationEvent = typeof DeviceOrientationEvent & {
+  requestPermission?: () => Promise<"granted" | "denied">;
 };
 
 const emptyGuide: GuideContent = {
@@ -63,6 +74,31 @@ function speechChunks(text: string) {
   return chunks;
 }
 
+function bearingDegrees(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const toRadians = Math.PI / 180;
+  const toDegrees = 180 / Math.PI;
+  const latitudeARadians = latitudeA * toRadians;
+  const latitudeBRadians = latitudeB * toRadians;
+  const longitudeDelta = (longitudeB - longitudeA) * toRadians;
+  const y = Math.sin(longitudeDelta) * Math.cos(latitudeBRadians);
+  const x =
+    Math.cos(latitudeARadians) * Math.sin(latitudeBRadians) -
+    Math.sin(latitudeARadians) *
+      Math.cos(latitudeBRadians) *
+      Math.cos(longitudeDelta);
+  return (Math.atan2(y, x) * toDegrees + 360) % 360;
+}
+
+function compassDirection(degrees: number) {
+  const directions = ["sever", "severovýchod", "východ", "jihovýchod", "jih", "jihozápad", "západ", "severozápad"];
+  return directions[Math.round(degrees / 45) % directions.length];
+}
+
 export function GuideApp() {
   const [place, setPlace] = useState<Place | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
@@ -72,18 +108,91 @@ export function GuideApp() {
   const [mapSelectionRequest, setMapSelectionRequest] = useState(0);
   const [question, setQuestion] = useState("");
   const [systemSpeaking, setSystemSpeaking] = useState(false);
+  const [compassHeading, setCompassHeading] = useState<number | null>(null);
+  const [compassStatus, setCompassStatus] = useState<CompassStatus>("idle");
   const speechRunRef = useRef(0);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const operationIdRef = useRef(0);
   const guideControllerRef = useRef<AbortController | null>(null);
+  const compassCleanupRef = useRef<(() => void) | null>(null);
+
+  const handleOrientation = useCallback((rawEvent: Event) => {
+    const event = rawEvent as CompassOrientationEvent;
+    let heading: number | null = null;
+    if (Number.isFinite(event.webkitCompassHeading)) {
+      heading = Number(event.webkitCompassHeading);
+    } else if (event.absolute && Number.isFinite(event.alpha)) {
+      heading = (360 - Number(event.alpha)) % 360;
+    }
+    if (heading === null) return;
+
+    const legacyOrientation = (window as Window & { orientation?: number })
+      .orientation;
+    const screenAngle =
+      window.screen.orientation?.angle ??
+      (Number.isFinite(legacyOrientation) ? Number(legacyOrientation) : 0);
+    const correctedHeading = (heading + screenAngle + 360) % 360;
+    setCompassHeading((current) => {
+      if (current === null) return correctedHeading;
+      const difference = Math.abs(
+        ((correctedHeading - current + 540) % 360) - 180,
+      );
+      return difference < 1 ? current : correctedHeading;
+    });
+    setCompassStatus("active");
+  }, []);
+
+  const startCompass = useCallback(() => {
+    compassCleanupRef.current?.();
+    const listener = handleOrientation as EventListener;
+    window.addEventListener("deviceorientationabsolute", listener);
+    window.addEventListener("deviceorientation", listener);
+    compassCleanupRef.current = () => {
+      window.removeEventListener("deviceorientationabsolute", listener);
+      window.removeEventListener("deviceorientation", listener);
+    };
+  }, [handleOrientation]);
 
   useEffect(() => {
+    if (!("DeviceOrientationEvent" in window)) {
+      setCompassStatus("unsupported");
+    } else {
+      const orientationEvent =
+        DeviceOrientationEvent as PermissionAwareOrientationEvent;
+      if (typeof orientationEvent.requestPermission !== "function") {
+        startCompass();
+      }
+    }
+
     return () => {
       guideControllerRef.current?.abort();
+      compassCleanupRef.current?.();
       speechRunRef.current += 1;
       window.speechSynthesis?.cancel();
     };
-  }, []);
+  }, [startCompass]);
+
+  async function enableCompass() {
+    if (!("DeviceOrientationEvent" in window)) {
+      setCompassStatus("unsupported");
+      return;
+    }
+
+    try {
+      const orientationEvent =
+        DeviceOrientationEvent as PermissionAwareOrientationEvent;
+      if (
+        typeof orientationEvent.requestPermission === "function" &&
+        (await orientationEvent.requestPermission()) !== "granted"
+      ) {
+        setCompassStatus("denied");
+        return;
+      }
+      startCompass();
+    } catch {
+      setCompassStatus("denied");
+    }
+  }
 
   const clearPreviousGuide = useCallback(() => {
     guideControllerRef.current?.abort();
@@ -322,6 +431,10 @@ export function GuideApp() {
   }
 
   const isBusy = status === "locating" || status === "loading";
+  const hasDirectionalNearby = guide.nearby.some(
+    (item) =>
+      Number.isFinite(item.latitude) && Number.isFinite(item.longitude),
+  );
 
   return (
     <main className="app-shell">
@@ -439,17 +552,72 @@ export function GuideApp() {
                       </div>
                       <Compass size={24} />
                     </div>
-                    <div className="nearby-list">
-                      {guide.nearby.map((item) => (
-                        <div key={item.name}>
-                          <span className="nearby-dot" />
+                    {hasDirectionalNearby && (
+                      <div className="compass-control">
+                        {compassStatus === "active" ? (
                           <span>
-                            <strong>{item.name}</strong>
-                            <small>{item.kind}</small>
+                            <Compass size={14} />
+                            Šipky reagují na natočení telefonu
                           </span>
-                          <em>{item.distance}</em>
-                        </div>
-                      ))}
+                        ) : compassStatus === "idle" ? (
+                          <button onClick={enableCompass} type="button">
+                            <Compass size={14} />
+                            Zapnout kompas
+                          </button>
+                        ) : (
+                          <span>
+                            <Compass size={14} />
+                            Šipky zatím ukazují směr vůči severu
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    <div className="nearby-list">
+                      {guide.nearby.map((item) => {
+                        const bearing =
+                          place &&
+                          Number.isFinite(item.latitude) &&
+                          Number.isFinite(item.longitude)
+                            ? bearingDegrees(
+                                place.latitude,
+                                place.longitude,
+                                item.latitude,
+                                item.longitude,
+                              )
+                            : null;
+                        const rotation =
+                          bearing === null
+                            ? 0
+                            : (bearing - (compassHeading ?? 0) + 360) % 360;
+                        return (
+                          <div key={item.name}>
+                            <span
+                              aria-label={
+                                bearing === null
+                                  ? "Směr není dostupný"
+                                  : `Směr: ${compassDirection(bearing)}`
+                              }
+                              className="nearby-direction"
+                              title={
+                                bearing === null
+                                  ? "Směr není dostupný"
+                                  : `Směr k cíli: ${compassDirection(bearing)}`
+                              }
+                            >
+                              <ArrowUp
+                                size={19}
+                                style={{ transform: `rotate(${rotation}deg)` }}
+                              />
+                            </span>
+                            <span className="nearby-dot" />
+                            <span className="nearby-copy">
+                              <strong>{item.name}</strong>
+                              <small>{item.kind}</small>
+                            </span>
+                            <em>{item.distance}</em>
+                          </div>
+                        );
+                      })}
                     </div>
                   </section>
                 )}

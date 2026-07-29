@@ -15,6 +15,15 @@ globalThis.fetch = async (input, init = {}) => {
             title: "Testovací místo",
             fullurl: "https://cs.wikipedia.org/wiki/Testovac%C3%AD_m%C3%ADsto",
             extract: "Testovací místo má doloženou místní historii.",
+            coordinates: [{ lat: 50.0875, lon: 14.4213 }],
+          },
+          {
+            pageid: 2,
+            index: 1,
+            title: "Blízká památka",
+            fullurl: "https://cs.wikipedia.org/wiki/Bl%C3%ADzk%C3%A1_pam%C3%A1tka",
+            extract: "Blízká památka je doloženým cílem v okolí.",
+            coordinates: [{ lat: 50.089, lon: 14.424 }],
           },
         ],
       },
@@ -40,7 +49,7 @@ globalThis.fetch = async (input, init = {}) => {
                 { title: "Druhý fakt", text: "Druhá doložená informace." },
                 { title: "Třetí fakt", text: "Třetí doložená informace." },
               ],
-              nearby: [],
+              nearby: [{ sourceIndex: 2, kind: "památka" }],
               question: "Co vás zajímá dál?",
               sourceUrls: ["https://example.invalid/model-link"],
             }),
@@ -79,8 +88,18 @@ assert.deepEqual(deepSeekRequest.response_format, { type: "json_object" });
 assert.match(deepSeekRequest.messages[1].content, /Testovací místo má doloženou/);
 assert.deepEqual(guide.sourceUrls, [
   "https://cs.wikipedia.org/wiki/Testovac%C3%AD_m%C3%ADsto",
+  "https://cs.wikipedia.org/wiki/Bl%C3%ADzk%C3%A1_pam%C3%A1tka",
 ]);
 assert.equal(guide.facts.length, 3);
+assert.deepEqual(guide.nearby, [
+  {
+    name: "Blízká památka",
+    distance: "přibližně 250 m",
+    kind: "památka",
+    latitude: 50.089,
+    longitude: 14.424,
+  },
+]);
 assert.equal(guide.cache.hit, false);
 
 const legacySpeech = await worker.fetch(
