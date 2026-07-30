@@ -315,6 +315,7 @@ async function guide(
 
   const location = String(body.label || "Neznámé místo").slice(0, 300);
   const userQuestion = String(body.question || "").trim().slice(0, 500);
+  const exactPoint = body.exactPoint === true;
   const key = cacheKey(latitude, longitude);
   analytics.place = location;
   analytics.latitude = latitude;
@@ -325,17 +326,28 @@ async function guide(
 
   if (!userQuestion) {
     try {
-      const cached = await googleRequest<CachedGuide>(env, "cacheGet", {
-        cacheKey: key,
-        latitude,
-        longitude,
-        maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
-        requiredModelPrefix: cacheModel,
-      });
+      const cached = await googleRequest<CachedGuide>(
+        env,
+        "cacheGet",
+        exactPoint
+          ? {
+              cacheKey: key,
+              requiredModelPrefix: cacheModel,
+            }
+          : {
+              cacheKey: key,
+              latitude,
+              longitude,
+              maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
+              requiredModelPrefix: cacheModel,
+            },
+      );
       if (cached?.guide) {
         const matchedKey = cached.cacheKey || key;
         analytics.detail =
-          Number(cached.distanceMeters) > 1
+          exactPoint
+            ? "cache_hit_selected_point"
+            : Number(cached.distanceMeters) > 1
             ? "cache_hit_nearby"
             : "cache_hit_exact";
         return json(
@@ -388,7 +400,9 @@ async function guide(
       guide: generated,
       textModel: cacheModel,
     });
-    analytics.detail = "cache_created";
+    analytics.detail = exactPoint
+      ? "cache_created_selected_point"
+      : "cache_created";
   } catch (error) {
     console.error("Guide cache save failed", error);
     analytics.detail = "cache_save_failed";

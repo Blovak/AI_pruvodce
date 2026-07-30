@@ -6,6 +6,7 @@ export type Coordinates = {
 
 export type Place = Coordinates & {
   label: string;
+  exactPoint?: boolean;
 };
 
 export type GuideFact = {

@@ -554,7 +554,7 @@ function cacheGet_(spreadsheetId, rawRequest) {
           false,
           requiredModelPrefix,
         )
-      : findValidCacheRow_(sheet, key, false);
+      : findValidCacheRow_(sheet, key, false, requiredModelPrefix);
     if (!match) return { ok: true, hit: false };
 
     const guide =
@@ -758,7 +758,7 @@ function ensureAudioFolder_() {
   return folder;
 }
 
-function findValidCacheRow_(sheet, key, requireAudio) {
+function findValidCacheRow_(sheet, key, requireAudio, requiredModelPrefix) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return null;
   const rows = sheet.getRange(2, 1, lastRow - 1, CACHE_HEADERS.length).getValues();
@@ -769,7 +769,9 @@ function findValidCacheRow_(sheet, key, requireAudio) {
     if (
       String(values[2]) === key &&
       validUntil > now &&
-      (!requireAudio || values[8])
+      (!requireAudio || values[8]) &&
+      (!requiredModelPrefix ||
+        String(values[9] || "").startsWith(requiredModelPrefix))
     ) {
       return { row: index + 2, values: values };
     }

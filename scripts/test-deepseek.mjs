@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 const nativeFetch = globalThis.fetch;
 let deepSeekRequest;
+let cacheGetRequest;
 const googleStorageUrl = "https://storage.test/apps-script";
 const authToken = "a".repeat(64);
 
@@ -17,6 +18,7 @@ globalThis.fetch = async (input, init = {}) => {
       });
     }
     if (payload.operation === "cacheGet") {
+      cacheGetRequest = payload;
       return Response.json({ ok: true, hit: false });
     }
     return Response.json({ ok: true });
@@ -93,6 +95,7 @@ const response = await worker.fetch(
       latitude: 50.0875,
       longitude: 14.4213,
       label: "Testovací místo",
+      exactPoint: true,
     }),
   }),
   {
@@ -105,6 +108,9 @@ const response = await worker.fetch(
 const guide = await response.json();
 
 assert.equal(response.status, 200);
+assert.equal(cacheGetRequest.cacheKey, "50.0875,14.4213");
+assert.equal("latitude" in cacheGetRequest, false);
+assert.equal("maxDistanceMeters" in cacheGetRequest, false);
 assert.equal(deepSeekRequest.model, "deepseek-v4-flash");
 assert.deepEqual(deepSeekRequest.response_format, { type: "json_object" });
 assert.match(deepSeekRequest.messages[1].content, /Testovací místo má doloženou/);

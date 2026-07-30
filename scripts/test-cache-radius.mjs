@@ -11,6 +11,7 @@ vm.runInContext(
   `${source}
 globalThis.__cacheTest = {
   EARTH_RADIUS_METERS,
+  findValidCacheRow_,
   findNearestValidCacheRow_,
   haversineMeters_,
 };`,
@@ -19,6 +20,7 @@ globalThis.__cacheTest = {
 
 const {
   EARTH_RADIUS_METERS,
+  findValidCacheRow_,
   findNearestValidCacheRow_,
   haversineMeters_,
 } = context.__cacheTest;
@@ -179,5 +181,29 @@ const deepSeekOnly = findNearestValidCacheRow_(
   "deepseek-",
 );
 assert.equal(deepSeekOnly.values[2], "deepseek-farther");
+
+const exactDeepSeekOnly = findValidCacheRow_(
+  sheet([
+    row({
+      key: "50.0000,14.0000",
+      latitude,
+      longitude,
+      model: "deepseek-v4-flash:nearby-directions-v1",
+    }),
+    row({
+      key: "50.0000,14.0000",
+      latitude,
+      longitude,
+      model: "gpt-5.6-sol",
+    }),
+  ]),
+  "50.0000,14.0000",
+  false,
+  "deepseek-v4-flash:nearby-directions-v1",
+);
+assert.equal(
+  exactDeepSeekOnly.values[9],
+  "deepseek-v4-flash:nearby-directions-v1",
+);
 
 console.log("Cache radius tests passed.");

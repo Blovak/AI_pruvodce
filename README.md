@@ -19,6 +19,8 @@ hlasu telefonu nebo počítače.
 - kdykoli vyhledat další konkrétní místo i po zobrazení výsledku,
 - vybrat přesný bod posunem interaktivní mapy pod pevnou značkou,
 - uložit výklad na jeden rok a při návratu na stejné místo jej znovu použít,
+- pro ručně vybraný bod, výsledek hledání nebo cíl v okolí použít pouze
+  výklad se stejným přesným cache klíčem, nikoli jiný blízký bod,
 - anonymně měřit využití a chyby v soukromé Google tabulce.
 
 ## Lokální spuštění

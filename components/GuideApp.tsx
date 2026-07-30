@@ -367,7 +367,11 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
       operation.controller.signal,
     );
     if (!isCurrentOperation(operation)) return;
-    await loadGuide(nextPlace, undefined, operation);
+    await loadGuide(
+      { ...nextPlace, exactPoint: true },
+      undefined,
+      operation,
+    );
   }
 
   function spokenGuideText() {
@@ -449,6 +453,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
       block: "start",
     });
     await loadGuide({
+      exactPoint: true,
       label: item.name,
       latitude: item.latitude,
       longitude: item.longitude,
@@ -799,7 +804,9 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSearchStart={clearPreviousGuide}
-        onSelect={(nextPlace) => loadGuide(nextPlace)}
+        onSelect={(nextPlace) =>
+          loadGuide({ ...nextPlace, exactPoint: true })
+        }
       />
     </main>
   );
