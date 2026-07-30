@@ -246,7 +246,6 @@ function authRequestCode_(spreadsheetId, payload) {
       to: email,
       subject: `${code} je váš přihlašovací kód do Místopisu`,
       name: "Místopis",
-      noReply: true,
       body:
         `Váš přihlašovací kód do aplikace Místopis je ${code}.\n\n` +
         "Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.",
