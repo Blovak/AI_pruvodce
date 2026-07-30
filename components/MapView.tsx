@@ -10,10 +10,64 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CircleMarker, Map as LeafletMap } from "leaflet";
+import type {
+  CircleMarker,
+  Map as LeafletMap,
+  Marker,
+  Polyline,
+} from "leaflet";
 import type { Coordinates, Place } from "@/lib/types";
 
 const defaultCenter: [number, number] = [49.8175, 15.473];
+const earthRadiusMeters = 6371008.8;
+
+function bearingDegrees(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const toRadians = Math.PI / 180;
+  const latitudeARadians = latitudeA * toRadians;
+  const latitudeBRadians = latitudeB * toRadians;
+  const longitudeDelta = (longitudeB - longitudeA) * toRadians;
+  const y = Math.sin(longitudeDelta) * Math.cos(latitudeBRadians);
+  const x =
+    Math.cos(latitudeARadians) * Math.sin(latitudeBRadians) -
+    Math.sin(latitudeARadians) *
+      Math.cos(latitudeBRadians) *
+      Math.cos(longitudeDelta);
+  return (Math.atan2(y, x) * (180 / Math.PI) + 360) % 360;
+}
+
+function distanceMeters(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const toRadians = Math.PI / 180;
+  const latitudeDelta = (latitudeB - latitudeA) * toRadians;
+  const longitudeDelta = (longitudeB - longitudeA) * toRadians;
+  const latitudeARadians = latitudeA * toRadians;
+  const latitudeBRadians = latitudeB * toRadians;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(latitudeARadians) *
+      Math.cos(latitudeBRadians) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return (
+    2 *
+    earthRadiusMeters *
+    Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  );
+}
+
+function distanceLabel(meters: number) {
+  return meters < 1000
+    ? `${Math.max(1, Math.round(meters))} m`
+    : `${(meters / 1000).toFixed(meters < 10000 ? 1 : 0)} km`;
+}
 
 export function MapView({
   place,
@@ -32,12 +86,41 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const markerRef = useRef<CircleMarker | null>(null);
+  const currentMarkerRef = useRef<CircleMarker | null>(null);
+  const directionMarkerRef = useRef<Marker | null>(null);
+  const directionLineRef = useRef<Polyline | null>(null);
   const leafletRef = useRef<typeof import("leaflet") | null>(null);
   const pickingRef = useRef(false);
+  const fittedViewportRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
   const [draft, setDraft] = useState<Coordinates | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [currentPosition, setCurrentPosition] = useState<Coordinates | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        setCurrentPosition({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+        });
+      },
+      () => {
+        // Aplikace zůstává použitelná i při zamítnuté nebo nedostupné GPS.
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 20000,
+      },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +166,9 @@ export function MapView({
       map?.remove();
       mapRef.current = null;
       markerRef.current = null;
+      currentMarkerRef.current = null;
+      directionMarkerRef.current = null;
+      directionLineRef.current = null;
       leafletRef.current = null;
     };
     // Mapa se vytváří pouze jednou; změny místa řeší samostatný efekt.
@@ -115,6 +201,7 @@ export function MapView({
 
     markerRef.current?.remove();
     markerRef.current = null;
+    fittedViewportRef.current = "";
 
     if (place) {
       markerRef.current = leaflet
@@ -127,11 +214,111 @@ export function MapView({
         })
         .addTo(map);
 
-      if (!pickingRef.current) {
+      if (!pickingRef.current && !currentPosition) {
         map.setView([place.latitude, place.longitude], 16);
       }
     }
+    // Aktuální GPS se vykresluje samostatně a nesmí znovu vytvářet cílovou
+    // značku ani při každé aktualizaci přepočítávat výřez mapy.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [place, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const leaflet = leafletRef.current;
+    if (!map || !leaflet || !currentPosition) return;
+
+    const currentLatLng: [number, number] = [
+      currentPosition.latitude,
+      currentPosition.longitude,
+    ];
+    if (!currentMarkerRef.current) {
+      currentMarkerRef.current = leaflet
+        .circleMarker(currentLatLng, {
+          radius: 8,
+          color: "#fff7e8",
+          weight: 3,
+          fillColor: "#255e53",
+          fillOpacity: 1,
+        })
+        .addTo(map);
+    } else {
+      currentMarkerRef.current.setLatLng(currentLatLng);
+    }
+
+    directionMarkerRef.current?.remove();
+    directionMarkerRef.current = null;
+    directionLineRef.current?.remove();
+    directionLineRef.current = null;
+
+    const targetDistance = place
+      ? distanceMeters(
+          currentPosition.latitude,
+          currentPosition.longitude,
+          place.latitude,
+          place.longitude,
+        )
+      : 0;
+
+    if (place && targetDistance >= 3) {
+      const bearing = bearingDegrees(
+        currentPosition.latitude,
+        currentPosition.longitude,
+        place.latitude,
+        place.longitude,
+      );
+      directionLineRef.current = leaflet
+        .polyline(
+          [
+            currentLatLng,
+            [place.latitude, place.longitude],
+          ],
+          {
+            color: "#c96845",
+            weight: 3,
+            opacity: 0.72,
+            dashArray: "7 9",
+          },
+        )
+        .addTo(map);
+      directionLineRef.current.bringToBack();
+      directionMarkerRef.current = leaflet
+        .marker(currentLatLng, {
+          interactive: false,
+          keyboard: false,
+          icon: leaflet.divIcon({
+            className: "map-direction-icon",
+            html: `<span class="map-direction-arrow" style="transform:rotate(${bearing}deg)"></span>`,
+            iconAnchor: [32, 32],
+            iconSize: [64, 64],
+          }),
+        })
+        .addTo(map);
+    }
+
+    if (pickingRef.current) return;
+    const viewportKey = place
+      ? `${place.latitude.toFixed(6)},${place.longitude.toFixed(6)}`
+      : "current-position";
+    if (fittedViewportRef.current === viewportKey) return;
+    fittedViewportRef.current = viewportKey;
+
+    if (place && targetDistance >= 3) {
+      map.fitBounds(
+        leaflet.latLngBounds(currentLatLng, [
+          place.latitude,
+          place.longitude,
+        ]),
+        {
+          paddingTopLeft: [65, 80],
+          paddingBottomRight: [65, 95],
+          maxZoom: 16,
+        },
+      );
+    } else {
+      map.setView(currentLatLng, 16);
+    }
+  }, [currentPosition, isPicking, mapReady, place]);
 
   const startPicking = useCallback(() => {
     const map = mapRef.current;
@@ -143,6 +330,16 @@ export function MapView({
     setDraft({ latitude: center.lat, longitude: center.lng });
     window.setTimeout(() => map.invalidateSize(), 0);
   }, [onSelectionStart]);
+
+  const selectedDistance =
+    place && currentPosition
+      ? distanceMeters(
+          currentPosition.latitude,
+          currentPosition.longitude,
+          place.latitude,
+          place.longitude,
+        )
+      : null;
 
   useEffect(() => {
     if (mapSelectionRequest <= 0 || !mapReady) return;
@@ -214,6 +411,24 @@ export function MapView({
           Vybrat bod
         </button>
       </div>
+
+      {currentPosition && (
+        <div className="map-location-legend" aria-live="polite">
+          <span>
+            <i className="current-position-swatch" />
+            Vaše poloha
+          </span>
+          {place && (
+            <span>
+              <i className="selected-position-swatch" />
+              Vybraný bod
+              {selectedDistance !== null && selectedDistance >= 3 && (
+                <strong>{distanceLabel(selectedDistance)}</strong>
+              )}
+            </span>
+          )}
+        </div>
+      )}
 
       {isPicking && draft && (
         <div className="map-picker-confirm" role="status">
