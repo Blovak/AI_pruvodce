@@ -2,9 +2,26 @@ import assert from "node:assert/strict";
 
 const nativeFetch = globalThis.fetch;
 let deepSeekRequest;
+const googleStorageUrl = "https://storage.test/apps-script";
+const authToken = "a".repeat(64);
 
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
+  if (url === googleStorageUrl) {
+    const payload = JSON.parse(String(init.body || "{}"));
+    if (payload.operation === "authSession") {
+      return Response.json({
+        ok: true,
+        authenticated: payload.authToken === authToken,
+        email: "test@example.com",
+      });
+    }
+    if (payload.operation === "cacheGet") {
+      return Response.json({ ok: true, hit: false });
+    }
+    return Response.json({ ok: true });
+  }
+
   if (url.startsWith("https://cs.wikipedia.org/w/api.php")) {
     return Response.json({
       query: {
@@ -69,6 +86,7 @@ const response = await worker.fetch(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
       Origin: "http://localhost:3000",
     },
     body: JSON.stringify({
@@ -77,7 +95,11 @@ const response = await worker.fetch(
       label: "Testovací místo",
     }),
   }),
-  { DEEPSEEK_API_KEY: "test-key" },
+  {
+    DEEPSEEK_API_KEY: "test-key",
+    GOOGLE_LOG_URL: googleStorageUrl,
+    GOOGLE_LOG_TOKEN: "storage-secret",
+  },
   context,
 );
 const guide = await response.json();

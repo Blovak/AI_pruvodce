@@ -94,6 +94,21 @@ export function MapView({
   }, [isPicking]);
 
   useEffect(() => {
+    document.body.classList.toggle("map-is-picking", isPicking);
+    const map = mapRef.current;
+    const frame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => map?.invalidateSize());
+    });
+    const resizeTimer = window.setTimeout(() => map?.invalidateSize(), 250);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(resizeTimer);
+      document.body.classList.remove("map-is-picking");
+    };
+  }, [isPicking]);
+
+  useEffect(() => {
     const map = mapRef.current;
     const leaflet = leafletRef.current;
     if (!map || !leaflet) return;
@@ -146,12 +161,13 @@ export function MapView({
 
   async function confirmPoint() {
     if (!draft || confirming) return;
+    const selectedPoint = draft;
     setConfirming(true);
+    pickingRef.current = false;
+    setIsPicking(false);
+    setDraft(null);
     try {
-      await onSelectPoint(draft);
-      pickingRef.current = false;
-      setIsPicking(false);
-      setDraft(null);
+      await onSelectPoint(selectedPoint);
     } finally {
       setConfirming(false);
     }
@@ -161,7 +177,9 @@ export function MapView({
     <section
       className={`map-panel${isPicking ? " is-picking" : ""}`}
       aria-label="Mapa pro výběr místa"
+      aria-modal={isPicking || undefined}
       ref={panelRef}
+      role={isPicking ? "dialog" : undefined}
     >
       <div className="interactive-map" ref={containerRef} />
 
