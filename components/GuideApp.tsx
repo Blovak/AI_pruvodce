@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { welcomeGuide } from "@/lib/fallback";
-import type { GuideContent, Place } from "@/lib/types";
+import type { GuideContent, NearbyPlace, Place } from "@/lib/types";
 import { LocationSearch } from "@/components/LocationSearch";
 import { MapView } from "@/components/MapView";
 import { apiUrl } from "@/lib/api-url";
@@ -120,6 +120,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
   const operationIdRef = useRef(0);
   const guideControllerRef = useRef<AbortController | null>(null);
   const compassCleanupRef = useRef<(() => void) | null>(null);
+  const guideScrollRef = useRef<HTMLDivElement | null>(null);
 
   const handleOrientation = useCallback((rawEvent: Event) => {
     const event = rawEvent as CompassOrientationEvent;
@@ -435,6 +436,25 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
     await loadGuide(place, nextQuestion);
   }
 
+  async function exploreNearby(item: NearbyPlace) {
+    if (
+      !Number.isFinite(item.latitude) ||
+      !Number.isFinite(item.longitude)
+    ) {
+      return;
+    }
+    guideScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    guideScrollRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+    await loadGuide({
+      label: item.name,
+      latitude: item.latitude,
+      longitude: item.longitude,
+    });
+  }
+
   const isBusy = status === "locating" || status === "loading";
   const hasDirectionalNearby = guide.nearby.some(
     (item) =>
@@ -480,7 +500,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
         />
 
         <section className="guide-panel">
-          <div className="guide-scroll">
+          <div className="guide-scroll" ref={guideScrollRef}>
             <div className="location-line">
               <MapPin size={15} />
               <span>{place?.label ?? "Poloha zatím není určená"}</span>
@@ -588,10 +608,12 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
                     )}
                     <div className="nearby-list">
                       {guide.nearby.map((item) => {
+                        const isSelectable =
+                          Number.isFinite(item.latitude) &&
+                          Number.isFinite(item.longitude);
                         const bearing =
                           place &&
-                          Number.isFinite(item.latitude) &&
-                          Number.isFinite(item.longitude)
+                          isSelectable
                             ? bearingDegrees(
                                 place.latitude,
                                 place.longitude,
@@ -603,8 +625,8 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
                           bearing === null
                             ? 0
                             : (bearing - (compassHeading ?? 0) + 360) % 360;
-                        return (
-                          <div key={item.name}>
+                        const content = (
+                          <>
                             <span
                               aria-label={
                                 bearing === null
@@ -629,6 +651,28 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
                               <small>{item.kind}</small>
                             </span>
                             <em>{item.distance}</em>
+                            {isSelectable && (
+                              <ArrowRight
+                                aria-hidden="true"
+                                className="nearby-open"
+                                size={16}
+                              />
+                            )}
+                          </>
+                        );
+                        return isSelectable ? (
+                          <button
+                            aria-label={`Prozkoumat ${item.name}, ${item.distance}`}
+                            className="nearby-item"
+                            key={item.name}
+                            onClick={() => exploreNearby(item)}
+                            type="button"
+                          >
+                            {content}
+                          </button>
+                        ) : (
+                          <div className="nearby-item" key={item.name}>
+                            {content}
                           </div>
                         );
                       })}
