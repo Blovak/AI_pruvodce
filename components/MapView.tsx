@@ -6,6 +6,8 @@ import {
   LoaderCircle,
   MapPin,
   MapPinned,
+  Maximize2,
+  Minimize2,
   Move,
   X,
 } from "lucide-react";
@@ -94,11 +96,13 @@ export function MapView({
   const fittedViewportRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
   const [isPicking, setIsPicking] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [draft, setDraft] = useState<Coordinates | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [currentPosition, setCurrentPosition] = useState<Coordinates | null>(
     null,
   );
+  const isMapExpanded = isPicking || isFullscreen;
 
   useEffect(() => {
     if (!navigator.geolocation) return;
@@ -180,19 +184,21 @@ export function MapView({
   }, [isPicking]);
 
   useEffect(() => {
-    document.body.classList.toggle("map-is-picking", isPicking);
+    document.body.classList.toggle("map-is-expanded", isMapExpanded);
     const map = mapRef.current;
+    let nestedFrame = 0;
     const frame = window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => map?.invalidateSize());
+      nestedFrame = window.requestAnimationFrame(() => map?.invalidateSize());
     });
     const resizeTimer = window.setTimeout(() => map?.invalidateSize(), 250);
 
     return () => {
       window.cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(nestedFrame);
       window.clearTimeout(resizeTimer);
-      document.body.classList.remove("map-is-picking");
+      document.body.classList.remove("map-is-expanded");
     };
-  }, [isPicking]);
+  }, [isMapExpanded]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -370,9 +376,28 @@ export function MapView({
     }
   }
 
+  useEffect(() => {
+    if (!isMapExpanded) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (isPicking) {
+        pickingRef.current = false;
+        setIsPicking(false);
+        setDraft(null);
+        return;
+      }
+      setIsFullscreen(false);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isMapExpanded, isPicking]);
+
   return (
     <section
-      className={`map-panel${isPicking ? " is-picking" : ""}`}
+      className={`map-panel${isMapExpanded ? " is-expanded" : ""}${isPicking ? " is-picking" : ""}`}
       aria-label="Mapa pro výběr místa"
       aria-modal={isPicking || undefined}
       ref={panelRef}
@@ -409,6 +434,15 @@ export function MapView({
         <button disabled={!mapReady} onClick={startPicking} type="button">
           <MapPin size={17} />
           Vybrat bod
+        </button>
+        <button
+          aria-pressed={isFullscreen}
+          disabled={!mapReady}
+          onClick={() => setIsFullscreen((fullscreen) => !fullscreen)}
+          type="button"
+        >
+          {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+          {isFullscreen ? "Zmenšit mapu" : "Celá obrazovka"}
         </button>
       </div>
 
