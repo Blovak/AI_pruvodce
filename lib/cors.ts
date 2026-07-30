@@ -10,7 +10,8 @@ export function corsHeaders(origin: string | null) {
   return {
     "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type, X-Mistopis-Session",
     Vary: "Origin",
   };
 }

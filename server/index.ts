@@ -10,6 +10,17 @@ type WorkerEnv = {
   GOOGLE_LOG_TOKEN?: string;
 };
 
+type AuthResult = {
+  authenticated?: boolean;
+  email?: string;
+  sent?: boolean;
+  verified?: boolean;
+  token?: string;
+  expiresAt?: string;
+  error?: string;
+  retryAfterSeconds?: number;
+};
+
 type Analytics = {
   action: string;
   session?: string;
@@ -47,7 +58,8 @@ function cors(origin: string | null) {
     "Access-Control-Allow-Origin":
       origin && allowedOrigins.has(origin) ? origin : "",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Mistopis-Session",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type, X-Mistopis-Session",
     Vary: "Origin",
   };
 }
@@ -95,6 +107,124 @@ async function googleRequest<T>(
     throw new Error(`Google storage: ${result.error || "unknown_error"}`);
   }
   return result;
+}
+
+function requestAuthToken(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  return authorization.match(/^Bearer\s+([A-Za-z0-9_-]{32,160})$/i)?.[1] || "";
+}
+
+function validEmail(value: unknown) {
+  const email = String(value || "").trim().toLowerCase();
+  return email.length <= 254 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)
+    ? email
+    : "";
+}
+
+async function authenticate(request: Request, env: WorkerEnv) {
+  const authToken = requestAuthToken(request);
+  if (!authToken) return null;
+  const result = await googleRequest<AuthResult>(env, "authSession", {
+    authToken,
+  });
+  return result?.authenticated && result.email
+    ? { email: result.email, token: authToken }
+    : null;
+}
+
+async function authRequestCode(
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
+) {
+  const body = (await request.json()) as Record<string, unknown>;
+  const email = validEmail(body.email);
+  if (!email) {
+    return json({ error: "Zadejte platnou e-mailovou adresu." }, 400, origin);
+  }
+  const result = await googleRequest<AuthResult>(env, "authRequestCode", {
+    email,
+  });
+  if (!result) {
+    return json(
+      { error: "Přihlašování není na serveru nakonfigurované." },
+      503,
+      origin,
+    );
+  }
+  if (!result.sent) {
+    return json(
+      {
+        error: "Další kód bude možné poslat za chvíli.",
+        retryAfterSeconds: result.retryAfterSeconds,
+      },
+      429,
+      origin,
+    );
+  }
+  return json({ sent: true, email }, 200, origin);
+}
+
+async function authVerifyCode(
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
+) {
+  const body = (await request.json()) as Record<string, unknown>;
+  const email = validEmail(body.email);
+  const code = String(body.code || "").replace(/\s/g, "");
+  if (!email || !/^\d{6}$/.test(code)) {
+    return json({ error: "Zadejte platný šestimístný kód." }, 400, origin);
+  }
+  const result = await googleRequest<AuthResult>(env, "authVerifyCode", {
+    email,
+    code,
+  });
+  if (!result?.verified || !result.token) {
+    return json(
+      {
+        error:
+          result?.error === "too_many_attempts"
+            ? "Příliš mnoho pokusů. Nechte si poslat nový kód."
+            : "Kód není platný nebo už vypršel.",
+      },
+      401,
+      origin,
+    );
+  }
+  return json(
+    {
+      token: result.token,
+      expiresAt: result.expiresAt,
+      user: { email },
+    },
+    200,
+    origin,
+  );
+}
+
+async function authSession(
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
+) {
+  const user = await authenticate(request, env);
+  return user
+    ? json({ user: { email: user.email } }, 200, origin)
+    : json({ error: "Relace není platná." }, 401, origin);
+}
+
+async function authLogout(
+  request: Request,
+  env: WorkerEnv,
+  origin: string | null,
+) {
+  const authToken = requestAuthToken(request);
+  if (authToken) {
+    await googleRequest<AuthResult>(env, "authLogout", { authToken });
+  }
+  return json({ loggedOut: true }, 200, origin);
 }
 
 async function geocode(
@@ -316,7 +446,37 @@ export default {
         return json({ status: "ok" }, 200, origin);
       }
       let response: Response;
-      if (request.method === "GET" && url.pathname === "/api/geocode") {
+      if (
+        request.method === "POST" &&
+        url.pathname === "/api/auth/request-code"
+      ) {
+        response = await authRequestCode(request, env, origin);
+      } else if (
+        request.method === "POST" &&
+        url.pathname === "/api/auth/verify-code"
+      ) {
+        response = await authVerifyCode(request, env, origin);
+      } else if (
+        request.method === "GET" &&
+        url.pathname === "/api/auth/session"
+      ) {
+        response = await authSession(request, env, origin);
+      } else if (
+        request.method === "POST" &&
+        url.pathname === "/api/auth/logout"
+      ) {
+        response = await authLogout(request, env, origin);
+      } else if (
+        (url.pathname === "/api/geocode" ||
+          url.pathname === "/api/guide") &&
+        !(await authenticate(request, env))
+      ) {
+        response = json(
+          { error: "Pro pokračování se přihlaste e-mailem." },
+          401,
+          origin,
+        );
+      } else if (request.method === "GET" && url.pathname === "/api/geocode") {
         response = await geocode(url, origin, analytics);
       } else if (request.method === "POST" && url.pathname === "/api/guide") {
         response = await guide(request, env, origin, analytics);

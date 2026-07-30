@@ -10,6 +10,9 @@ Listy:
 - `Použití` — anonymizované provozní události,
 - `Chyby` — požadavky se stavem 400 a vyšším,
 - `Zpětná vazba` — připraveno pro další beta verzi.
+- `Uživatelé` — e-mail, datum prvního a posledního přihlášení,
+- `Přihlašovací kódy` — krátkodobé HMAC otisky kódů a počty pokusů,
+- `Přihlašovací relace` — HMAC otisky dlouhodobých tokenů zařízení.
 
 Cache výkladů:
 
@@ -25,8 +28,14 @@ Cache výkladů:
 Soukromí:
 
 - přesná poloha se před zápisem zaokrouhlí na dvě desetinná místa,
-- neukládají se IP adresy, e-maily ani text otázek,
-- identifikátor relace je náhodný údaj uložený pouze v prohlížeči uživatele.
+- neukládají se IP adresy ani text otázek,
+- e-mail se ukládá pouze kvůli přihlášení,
+- šestimístné kódy a tokeny zařízení se ukládají pouze jako HMAC otisky,
+- kód platí 10 minut a nejvýše 5 pokusů; relace zařízení platí 180 dní.
+
+Po prvním nasazení autentizace spusťte v editoru Apps Scriptu funkci
+`authorizeAuthentication()`. Vytvoří potřebné listy, bezpečný `AUTH_SECRET`
+v Script Properties a vyžádá oprávnění k odesílání přihlašovacích e-mailů.
 
 Aktualizace skriptu:
 

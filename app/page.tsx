@@ -1,5 +1,5 @@
-import { GuideApp } from "@/components/GuideApp";
+import { AuthenticatedApp } from "@/components/AuthenticatedApp";
 
 export default function Home() {
-  return <GuideApp />;
+  return <AuthenticatedApp />;
 }

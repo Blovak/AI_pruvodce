@@ -1,9 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
 import { createDeepSeekGuide } from "@/lib/deepseek";
+import { authenticateRequest } from "@/lib/auth-server";
 
 export async function POST(request: NextRequest) {
   const responseHeaders = corsHeaders(request.headers.get("origin"));
+  try {
+    if (!(await authenticateRequest(request))) {
+      return NextResponse.json(
+        { error: "Pro pokračování se přihlaste e-mailem." },
+        { status: 401, headers: responseHeaders },
+      );
+    }
+  } catch (error) {
+    console.error("Authentication failed", error);
+    return NextResponse.json(
+      { error: "Přihlášení se nepodařilo ověřit." },
+      { status: 503, headers: responseHeaders },
+    );
+  }
   if (!process.env.DEEPSEEK_API_KEY) {
     return NextResponse.json(
       { error: "Na serveru chybí DEEPSEEK_API_KEY." },

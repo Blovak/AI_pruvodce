@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
+import { authenticateRequest } from "@/lib/auth-server";
 
 const headers = {
   "User-Agent": "Mistopis-beta/0.1 (AI location guide)",
@@ -8,6 +9,20 @@ const headers = {
 
 export async function GET(request: NextRequest) {
   const responseHeaders = corsHeaders(request.headers.get("origin"));
+  try {
+    if (!(await authenticateRequest(request))) {
+      return NextResponse.json(
+        { error: "Pro pokračování se přihlaste e-mailem." },
+        { status: 401, headers: responseHeaders },
+      );
+    }
+  } catch (error) {
+    console.error("Authentication failed", error);
+    return NextResponse.json(
+      { error: "Přihlášení se nepodařilo ověřit." },
+      { status: 503, headers: responseHeaders },
+    );
+  }
   const latitude = Number(request.nextUrl.searchParams.get("lat"));
   const longitude = Number(request.nextUrl.searchParams.get("lon"));
   const query = request.nextUrl.searchParams.get("q")?.trim();

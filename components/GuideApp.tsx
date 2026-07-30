@@ -11,8 +11,8 @@ import {
   Landmark,
   LoaderCircle,
   LocateFixed,
+  LogOut,
   MapPin,
-  Menu,
   RotateCcw,
   Search,
   Sparkles,
@@ -99,7 +99,12 @@ function compassDirection(degrees: number) {
   return directions[Math.round(degrees / 45) % directions.length];
 }
 
-export function GuideApp() {
+type GuideAppProps = {
+  userEmail: string;
+  onLogout: () => void;
+};
+
+export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
   const [place, setPlace] = useState<Place | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
   const [status, setStatus] = useState<Status>("idle");
@@ -450,8 +455,17 @@ export function GuideApp() {
           <button onClick={() => setSearchOpen(true)} type="button">
             <Search size={16} /> Najít místo
           </button>
-          <button className="icon-button" type="button" aria-label="Menu">
-            <Menu size={20} />
+          <span className="signed-in-email" title={userEmail}>
+            {userEmail}
+          </span>
+          <button
+            className="icon-button"
+            onClick={onLogout}
+            type="button"
+            aria-label="Odhlásit se"
+            title="Odhlásit se"
+          >
+            <LogOut size={18} />
           </button>
         </nav>
       </header>

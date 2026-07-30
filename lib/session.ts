@@ -1,4 +1,5 @@
 const storageKey = "mistopis-anonymous-session";
+const authStorageKey = "mistopis-auth-token";
 
 export function getSessionHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};
@@ -12,5 +13,23 @@ export function getSessionHeaders(): Record<string, string> {
     window.localStorage.setItem(storageKey, session);
   }
 
-  return { "X-Mistopis-Session": session };
+  const token = window.localStorage.getItem(authStorageKey);
+  return {
+    "X-Mistopis-Session": session,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+export function getAuthToken() {
+  return typeof window === "undefined"
+    ? null
+    : window.localStorage.getItem(authStorageKey);
+}
+
+export function rememberAuthToken(token: string) {
+  window.localStorage.setItem(authStorageKey, token);
+}
+
+export function forgetAuthToken() {
+  window.localStorage.removeItem(authStorageKey);
 }

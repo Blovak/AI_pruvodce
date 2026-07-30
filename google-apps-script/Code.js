@@ -4,12 +4,21 @@ const SHEETS = {
   errors: "Chyby",
   feedback: "Zpětná vazba",
   cache: "Místa a MP3",
+  users: "Uživatelé",
+  authCodes: "Přihlašovací kódy",
+  authSessions: "Přihlašovací relace",
 };
 
 const CACHE_TTL_YEARS = 1;
 const DEFAULT_CACHE_RADIUS_METERS = 800;
 const MAX_CACHE_RADIUS_METERS = 5000;
 const EARTH_RADIUS_METERS = 6371008.8;
+const AUTH_CODE_TTL_MS = 10 * 60 * 1000;
+const AUTH_SESSION_TTL_MS = 180 * 24 * 60 * 60 * 1000;
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_MAX_REQUESTS_PER_WINDOW = 3;
+const AUTH_MAX_GLOBAL_REQUESTS_PER_WINDOW = 60;
+const AUTH_MAX_CODE_ATTEMPTS = 5;
 
 const USAGE_HEADERS = [
   "Čas",
@@ -59,6 +68,31 @@ const CACHE_HEADERS = [
   "Počet použití",
 ];
 
+const USER_HEADERS = [
+  "E-mail",
+  "Vytvořeno",
+  "Poslední přihlášení",
+  "Stav",
+];
+
+const AUTH_CODE_HEADERS = [
+  "E-mail",
+  "Otisk kódu",
+  "Vytvořeno",
+  "Platné do",
+  "Pokusy",
+  "Použito",
+];
+
+const AUTH_SESSION_HEADERS = [
+  "Otisk tokenu",
+  "E-mail",
+  "Vytvořeno",
+  "Platné do",
+  "Poslední použití",
+  "Odvoláno",
+];
+
 function setup(logToken, spreadsheetId) {
   const properties = PropertiesService.getScriptProperties();
   const targetId =
@@ -73,11 +107,15 @@ function setup(logToken, spreadsheetId) {
     LOG_TOKEN: token,
     SPREADSHEET_ID: spreadsheet.getId(),
   });
+  if (!properties.getProperty("AUTH_SECRET")) {
+    properties.setProperty("AUTH_SECRET", createToken_());
+  }
 
   ensureSheet_(spreadsheet, SHEETS.usage, USAGE_HEADERS, "#e7ede9");
   ensureSheet_(spreadsheet, SHEETS.errors, ERROR_HEADERS, "#f8e8e3");
   ensureSheet_(spreadsheet, SHEETS.feedback, FEEDBACK_HEADERS, "#eee9f5");
   ensureCacheSheet_(spreadsheet);
+  ensureAuthSheets_(spreadsheet);
   setupOverview_(spreadsheet);
 
   return {
@@ -122,6 +160,14 @@ function doPost(event) {
         return json_(cacheGetAudio_(spreadsheetId, payload.cacheKey));
       case "cacheSaveAudio":
         return json_(cacheSaveAudio_(spreadsheetId, payload));
+      case "authRequestCode":
+        return json_(authRequestCode_(spreadsheetId, payload));
+      case "authVerifyCode":
+        return json_(authVerifyCode_(spreadsheetId, payload));
+      case "authSession":
+        return json_(authSession_(spreadsheetId, payload));
+      case "authLogout":
+        return json_(authLogout_(spreadsheetId, payload));
       default: {
         const item = normalizeEvent_(payload.event || {});
         writeEvent_(item, spreadsheetId);
@@ -132,6 +178,329 @@ function doPost(event) {
     console.error(error);
     return json_({ ok: false, error: "invalid_request" });
   }
+}
+
+function authorizeAuthentication() {
+  const properties = PropertiesService.getScriptProperties();
+  const spreadsheetId = properties.getProperty("SPREADSHEET_ID");
+  if (!spreadsheetId) throw new Error("Nejprve spusťte setup.");
+  if (!properties.getProperty("AUTH_SECRET")) {
+    properties.setProperty("AUTH_SECRET", createToken_());
+  }
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  ensureAuthSheets_(spreadsheet);
+  MailApp.getRemainingDailyQuota();
+  return {
+    ok: true,
+    spreadsheetUrl: spreadsheet.getUrl(),
+    remainingEmailQuota: MailApp.getRemainingDailyQuota(),
+  };
+}
+
+function authRequestCode_(spreadsheetId, payload) {
+  const email = normalizeEmail_(payload.email);
+  if (!email) return { ok: false, error: "invalid_email" };
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheets = ensureAuthSheets_(spreadsheet);
+    const now = new Date();
+    const recentRequests = recentEmailRows_(
+      sheets.codes,
+      email,
+      now.getTime() - AUTH_RATE_WINDOW_MS,
+    );
+    const recentGlobalRequests = recentCodeRows_(
+      sheets.codes,
+      now.getTime() - AUTH_RATE_WINDOW_MS,
+    );
+    if (
+      recentRequests >= AUTH_MAX_REQUESTS_PER_WINDOW ||
+      recentGlobalRequests >= AUTH_MAX_GLOBAL_REQUESTS_PER_WINDOW
+    ) {
+      return {
+        ok: true,
+        sent: false,
+        retryAfterSeconds: Math.ceil(AUTH_RATE_WINDOW_MS / 1000),
+      };
+    }
+    if (MailApp.getRemainingDailyQuota() < 1) {
+      return { ok: true, sent: false, retryAfterSeconds: 3600 };
+    }
+
+    invalidateEmailCodes_(sheets.codes, email);
+    const code = createAuthCode_();
+    const expiresAt = new Date(now.getTime() + AUTH_CODE_TTL_MS);
+    sheets.codes.appendRow([
+      safeCell_(email),
+      authHash_(`code:${email}:${code}`),
+      now,
+      expiresAt,
+      0,
+      false,
+    ]);
+
+    MailApp.sendEmail({
+      to: email,
+      subject: `${code} je váš přihlašovací kód do Místopisu`,
+      name: "Místopis",
+      noReply: true,
+      body:
+        `Váš přihlašovací kód do aplikace Místopis je ${code}.\n\n` +
+        "Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.",
+      htmlBody:
+        '<div style="font-family:Arial,sans-serif;max-width:520px;color:#17211f">' +
+        '<h1 style="color:#173b35">Místopis</h1>' +
+        "<p>Váš přihlašovací kód je:</p>" +
+        `<p style="font-size:32px;font-weight:700;letter-spacing:8px;color:#c96845">${code}</p>` +
+        "<p>Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.</p>" +
+        "</div>",
+    });
+    return { ok: true, sent: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function authVerifyCode_(spreadsheetId, payload) {
+  const email = normalizeEmail_(payload.email);
+  const code = String(payload.code || "").replace(/\s/g, "");
+  if (!email || !/^\d{6}$/.test(code)) {
+    return { ok: true, verified: false, error: "invalid_code" };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    const sheets = ensureAuthSheets_(spreadsheet);
+    const match = latestAuthCodeRow_(sheets.codes, email);
+    if (!match || match.expiresAt <= Date.now() || match.used) {
+      return { ok: true, verified: false, error: "invalid_code" };
+    }
+    if (match.attempts >= AUTH_MAX_CODE_ATTEMPTS) {
+      return { ok: true, verified: false, error: "too_many_attempts" };
+    }
+
+    const expectedHash = authHash_(`code:${email}:${code}`);
+    if (!safeEqual_(expectedHash, String(match.values[1] || ""))) {
+      sheets.codes.getRange(match.row, 5).setValue(match.attempts + 1);
+      return {
+        ok: true,
+        verified: false,
+        error:
+          match.attempts + 1 >= AUTH_MAX_CODE_ATTEMPTS
+            ? "too_many_attempts"
+            : "invalid_code",
+      };
+    }
+
+    const now = new Date();
+    const token = createToken_();
+    const expiresAt = new Date(now.getTime() + AUTH_SESSION_TTL_MS);
+    sheets.codes.getRange(match.row, 5, 1, 2).setValues([
+      [match.attempts + 1, true],
+    ]);
+    sheets.sessions.appendRow([
+      authHash_(`session:${token}`),
+      safeCell_(email),
+      now,
+      expiresAt,
+      now,
+      false,
+    ]);
+    upsertUser_(sheets.users, email, now);
+    return {
+      ok: true,
+      verified: true,
+      token: token,
+      expiresAt: expiresAt.toISOString(),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function authSession_(spreadsheetId, payload) {
+  const token = String(payload.authToken || "");
+  if (!/^[A-Za-z0-9_-]{32,160}$/.test(token)) {
+    return { ok: true, authenticated: false };
+  }
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const sheets = ensureAuthSheets_(spreadsheet);
+  const match = findAuthSession_(sheets.sessions, token);
+  if (!match) return { ok: true, authenticated: false };
+
+  const lastUsed =
+    match.values[4] instanceof Date ? match.values[4].getTime() : 0;
+  if (Date.now() - lastUsed > 24 * 60 * 60 * 1000) {
+    sheets.sessions.getRange(match.row, 5).setValue(new Date());
+  }
+  return {
+    ok: true,
+    authenticated: true,
+    email: String(match.values[1] || ""),
+    expiresAt: new Date(match.expiresAt).toISOString(),
+  };
+}
+
+function authLogout_(spreadsheetId, payload) {
+  const token = String(payload.authToken || "");
+  if (!token) return { ok: true };
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const sheets = ensureAuthSheets_(spreadsheet);
+  const match = findAuthSession_(sheets.sessions, token);
+  if (match) sheets.sessions.getRange(match.row, 6).setValue(true);
+  return { ok: true };
+}
+
+function ensureAuthSheets_(spreadsheet) {
+  const users = ensureSheet_(
+    spreadsheet,
+    SHEETS.users,
+    USER_HEADERS,
+    "#e7ede9",
+  );
+  const codes = ensureSheet_(
+    spreadsheet,
+    SHEETS.authCodes,
+    AUTH_CODE_HEADERS,
+    "#f8e8e3",
+  );
+  const sessions = ensureSheet_(
+    spreadsheet,
+    SHEETS.authSessions,
+    AUTH_SESSION_HEADERS,
+    "#eee9f5",
+  );
+  return { users: users, codes: codes, sessions: sessions };
+}
+
+function normalizeEmail_(value) {
+  const email = cleanText_(value, 254).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) ? email : "";
+}
+
+function createAuthCode_() {
+  const bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    `${createToken_()}:${new Date().getTime()}:${Math.random()}`,
+  );
+  const number =
+    ((bytes[0] & 255) << 24) |
+    ((bytes[1] & 255) << 16) |
+    ((bytes[2] & 255) << 8) |
+    (bytes[3] & 255);
+  return String(Math.abs(number) % 1000000).padStart(6, "0");
+}
+
+function authHash_(value) {
+  const secret = PropertiesService.getScriptProperties().getProperty(
+    "AUTH_SECRET",
+  );
+  if (!secret) throw new Error("auth_secret_missing");
+  const signature = Utilities.computeHmacSha256Signature(
+    String(value),
+    secret,
+  );
+  return Utilities.base64EncodeWebSafe(signature).replace(/=+$/g, "");
+}
+
+function recentEmailRows_(sheet, email, since) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  const rows = sheet
+    .getRange(2, 1, lastRow - 1, AUTH_CODE_HEADERS.length)
+    .getValues();
+  return rows.filter(
+    (values) =>
+      String(values[0]) === email &&
+      values[2] instanceof Date &&
+      values[2].getTime() >= since,
+  ).length;
+}
+
+function recentCodeRows_(sheet, since) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return 0;
+  return sheet
+    .getRange(2, 3, lastRow - 1, 1)
+    .getValues()
+    .filter(
+      (row) => row[0] instanceof Date && row[0].getTime() >= since,
+    ).length;
+}
+
+function invalidateEmailCodes_(sheet, email) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const values = sheet.getRange(2, 1, lastRow - 1, 6).getValues();
+  let changed = false;
+  values.forEach((row) => {
+    if (String(row[0]) === email && row[5] !== true) {
+      row[5] = true;
+      changed = true;
+    }
+  });
+  if (changed) sheet.getRange(2, 1, values.length, 6).setValues(values);
+}
+
+function latestAuthCodeRow_(sheet, email) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const rows = sheet
+    .getRange(2, 1, lastRow - 1, AUTH_CODE_HEADERS.length)
+    .getValues();
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const values = rows[index];
+    if (String(values[0]) !== email) continue;
+    return {
+      row: index + 2,
+      values: values,
+      expiresAt: values[3] instanceof Date ? values[3].getTime() : 0,
+      attempts: Number(values[4]) || 0,
+      used: values[5] === true,
+    };
+  }
+  return null;
+}
+
+function findAuthSession_(sheet, token) {
+  const tokenHash = authHash_(`session:${token}`);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return null;
+  const rows = sheet
+    .getRange(2, 1, lastRow - 1, AUTH_SESSION_HEADERS.length)
+    .getValues();
+  const now = Date.now();
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const values = rows[index];
+    const expiresAt = values[3] instanceof Date ? values[3].getTime() : 0;
+    if (
+      safeEqual_(String(values[0] || ""), tokenHash) &&
+      expiresAt > now &&
+      values[5] !== true
+    ) {
+      return { row: index + 2, values: values, expiresAt: expiresAt };
+    }
+  }
+  return null;
+}
+
+function upsertUser_(sheet, email, now) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const emails = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (let index = 0; index < emails.length; index += 1) {
+      if (String(emails[index][0]) === email) {
+        sheet.getRange(index + 2, 3, 1, 2).setValues([[now, "aktivní"]]);
+        return;
+      }
+    }
+  }
+  sheet.appendRow([safeCell_(email), now, now, "aktivní"]);
 }
 
 function authorizeCacheStorage() {
@@ -647,6 +1016,7 @@ function ensureSheet_(spreadsheet, name, headers, color) {
   if (!sheet.getFilter()) {
     sheet.getRange(1, 1, Math.max(sheet.getMaxRows(), 2), headers.length).createFilter();
   }
+  return sheet;
 }
 
 function createToken_() {

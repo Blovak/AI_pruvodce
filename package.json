@@ -10,6 +10,7 @@
     "build:pages": "node scripts/package-pages.mjs",
     "start": "next start",
     "test:cache": "node scripts/test-cache-radius.mjs",
+    "test:auth": "npm run build && node scripts/test-auth.mjs",
     "test:deepseek": "node scripts/test-deepseek.mjs",
     "test:deepseek:live": "node scripts/smoke-deepseek-live.mjs",
     "typecheck": "tsc --noEmit"

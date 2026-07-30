@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { GuideApp } from "@/components/GuideApp";
+import { AuthenticatedApp } from "@/components/AuthenticatedApp";
 import "@/app/globals.css";
 
 const root = document.getElementById("root");
@@ -11,6 +11,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <GuideApp />
+    <AuthenticatedApp />
   </StrictMode>,
 );

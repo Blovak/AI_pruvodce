@@ -7,6 +7,8 @@ hlasu telefonu nebo počítače.
 ## Co beta umí
 
 - získat přesnou polohu z prohlížeče nebo vyhledat místo ručně,
+- přihlásit uživatele šestimístným kódem poslaným na e-mail a zapamatovat
+  zařízení po dobu 180 dní,
 - zobrazit okolí na mapě OpenStreetMap,
 - vytvořit česky psaný, zdrojovaný výklad pomocí DeepSeek API,
 - doporučit doložitelná místa v pěší vzdálenosti,
@@ -21,7 +23,8 @@ hlasu telefonu nebo počítače.
 
 ## Lokální spuštění
 
-Požadavky: Node.js 22+ a DeepSeek API klíč.
+Požadavky: Node.js 22+, DeepSeek API klíč a nakonfigurovaný Apps Script
+endpoint pro přihlášení, analytiku a cache.
 
 ```bash
 npm install
@@ -32,6 +35,8 @@ Do `.env.local` vložte svůj klíč:
 
 ```dotenv
 DEEPSEEK_API_KEY=sk-...
+GOOGLE_LOG_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+GOOGLE_LOG_TOKEN=...
 ```
 
 Potom spusťte:
@@ -59,7 +64,11 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - Cache obsahuje vygenerovaný výklad. Po jednom roce se záznam přestane používat
   a aplikace vytvoří nový výklad.
 - Text doplňujících otázek se neukládá, pouze jejich délka.
-- Náhodný identifikátor relace neobsahuje e-mail, IP adresu ani identitu uživatele.
+- E-mail se ukládá pouze kvůli přihlášení. Jednorázové kódy a dlouhodobé tokeny
+  zařízení jsou v úložišti pouze jako HMAC otisky.
+- Šestimístný kód platí 10 minut a dovolí nejvýše 5 pokusů. Odeslání je
+  omezené proti zneužití a token konkrétního zařízení platí 180 dní.
+- Anonymní provozní identifikátor relace neobsahuje e-mail ani IP adresu.
 - Hlas je syntetický, vytvořený AI; aplikace to u přehrávače výslovně uvádí.
 
 ## Architektura připravená na rozvoj
@@ -101,7 +110,7 @@ Veřejná URL načítá přímo kořenový `index.html`; sestavení k němu vytv
 statické soubory `assets/app.js` a `assets/app.css`.
 
 Produkční backend používá zabezpečený Apps Script endpoint pro anonymizovanou
-analytiku i cache. List `Místa a MP3` uchovává souřadnice, odpověď AI a platnost;
+analytiku, cache i emailové přihlášení. List `Místa a MP3` uchovává souřadnice, odpověď AI a platnost;
 sloupce se staršími MP3 zůstávají kvůli historii. Nové uživatelské rozhraní MP3
 nenabízí ani negeneruje. Sdílený token je uložen pouze v Script Properties a v
 serverových secrets. Pokud Google úložiště selže, průvodce se pokusí požadavek
