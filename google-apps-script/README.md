@@ -1,8 +1,10 @@
-# Google Apps Script analytika
+# Google Apps Script e-mail a analytická kopie
 
-Tento adresář obsahuje zdroj zabezpečeného logovacího endpointu pro Místopis.
-Apps Script je navázaný na soukromou Google tabulku a přijímá pouze požadavky
-s tokenem uloženým v Script Properties.
+Tento adresář obsahuje zdroj zabezpečeného pomocného endpointu pro Místopis.
+Po přechodu na Firestore odesílá přihlašovací e-maily, asynchronně kopíruje
+provozní analytiku do soukromé Google tabulky a stránkovaně poskytuje původní
+řádky autorizovanému migračnímu nástroji. Všechny operace vyžadují token ze
+Script Properties.
 
 Listy:
 
@@ -24,6 +26,10 @@ Cache výkladů:
   pomocí AI a uloží ho jako další bod,
 - Historické sloupce MP3 zůstávají v tabulce kvůli starším datům. Aktuální
   DeepSeek verze aplikace zvukové soubory nevytváří a používá systémový hlas.
+
+Po dokončení migrace jsou cache a autentizační listy archivní zálohou.
+Firestore je jejich primárním provozním úložištěm; běžné požadavky už tyto
+listy neprohledávají.
 
 Soukromí:
 

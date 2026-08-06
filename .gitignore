@@ -15,6 +15,7 @@
 .env
 .env.local
 .env.*.local
+/.firebase-service-account*.json
 
 # Google Apps Script local credentials / generated secrets
 /google-apps-script/.clasprc.json

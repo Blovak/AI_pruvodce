@@ -168,6 +168,10 @@ function doPost(event) {
         return json_(authSession_(spreadsheetId, payload));
       case "authLogout":
         return json_(authLogout_(spreadsheetId, payload));
+      case "sendAuthCodeEmail":
+        return json_(sendAuthCodeEmail_(payload));
+      case "migrationExport":
+        return json_(migrationExport_(spreadsheetId, payload));
       default: {
         const item = normalizeEvent_(payload.event || {});
         writeEvent_(item, spreadsheetId);
@@ -242,25 +246,78 @@ function authRequestCode_(spreadsheetId, payload) {
       false,
     ]);
 
-    MailApp.sendEmail({
-      to: email,
-      subject: `${code} je váš přihlašovací kód do Místopisu`,
-      name: "Místopis",
-      body:
-        `Váš přihlašovací kód do aplikace Místopis je ${code}.\n\n` +
-        "Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.",
-      htmlBody:
-        '<div style="font-family:Arial,sans-serif;max-width:520px;color:#17211f">' +
-        '<h1 style="color:#173b35">Místopis</h1>' +
-        "<p>Váš přihlašovací kód je:</p>" +
-        `<p style="font-size:32px;font-weight:700;letter-spacing:8px;color:#c96845">${code}</p>` +
-        "<p>Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.</p>" +
-        "</div>",
-    });
-    return { ok: true, sent: true };
+    return sendAuthCodeEmail_({ email: email, code: code });
   } finally {
     lock.releaseLock();
   }
+}
+
+function sendAuthCodeEmail_(payload) {
+  const email = normalizeEmail_(payload.email);
+  const code = String(payload.code || "").replace(/\s/g, "");
+  if (!email || !/^\d{6}$/.test(code)) {
+    return { ok: false, error: "invalid_auth_email" };
+  }
+  if (MailApp.getRemainingDailyQuota() < 1) {
+    return { ok: true, sent: false, retryAfterSeconds: 3600 };
+  }
+  MailApp.sendEmail({
+    to: email,
+    subject: `${code} je váš přihlašovací kód do Místopisu`,
+    name: "Místopis",
+    body:
+      `Váš přihlašovací kód do aplikace Místopis je ${code}.\n\n` +
+      "Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.",
+    htmlBody:
+      '<div style="font-family:Arial,sans-serif;max-width:520px;color:#17211f">' +
+      '<h1 style="color:#173b35">Místopis</h1>' +
+      "<p>Váš přihlašovací kód je:</p>" +
+      `<p style="font-size:32px;font-weight:700;letter-spacing:8px;color:#c96845">${code}</p>` +
+      "<p>Kód platí 10 minut. Pokud jste o něj nežádali, tento e-mail ignorujte.</p>" +
+      "</div>",
+  });
+  return { ok: true, sent: true };
+}
+
+function migrationExport_(spreadsheetId, payload) {
+  const datasets = {
+    usage: SHEETS.usage,
+    errors: SHEETS.errors,
+    feedback: SHEETS.feedback,
+    cache: SHEETS.cache,
+    users: SHEETS.users,
+    authCodes: SHEETS.authCodes,
+    authSessions: SHEETS.authSessions,
+  };
+  const dataset = cleanText_(payload.dataset, 30);
+  const sheetName = datasets[dataset];
+  if (!sheetName) return { ok: false, error: "invalid_migration_dataset" };
+
+  const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+  const sheet = spreadsheet.getSheetByName(sheetName);
+  if (!sheet) return { ok: false, error: "migration_sheet_missing" };
+  const lastRow = sheet.getLastRow();
+  const lastColumn = sheet.getLastColumn();
+  const totalRows = Math.max(lastRow - 1, 0);
+  const offset = Math.max(0, Math.floor(Number(payload.offset) || 0));
+  const limit = Math.min(250, Math.max(1, Math.floor(Number(payload.limit) || 100)));
+  const count = Math.max(0, Math.min(limit, totalRows - offset));
+  const headers = lastColumn
+    ? sheet.getRange(1, 1, 1, lastColumn).getDisplayValues()[0]
+    : [];
+  const rows = count
+    ? sheet.getRange(offset + 2, 1, count, lastColumn).getValues()
+    : [];
+  return {
+    ok: true,
+    dataset: dataset,
+    sheet: sheetName,
+    headers: headers,
+    totalRows: totalRows,
+    offset: offset,
+    rows: rows,
+    nextOffset: offset + count < totalRows ? offset + count : null,
+  };
 }
 
 function authVerifyCode_(spreadsheetId, payload) {

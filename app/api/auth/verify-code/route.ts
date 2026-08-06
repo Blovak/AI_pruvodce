@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authStorageRequest } from "@/lib/auth-server";
+import {
+  authStorageRequest,
+  firestoreAuthConfigured,
+  serverStorageEnv,
+} from "@/lib/auth-server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
+import { verifyAuthCode } from "@/lib/firestore-storage";
 
 type VerifyCodeResult = {
   verified?: boolean;
@@ -25,10 +30,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await authStorageRequest<VerifyCodeResult>(
-      "authVerifyCode",
-      { email, code },
-    );
+    const result = firestoreAuthConfigured()
+      ? await verifyAuthCode(serverStorageEnv(), email, code)
+      : await authStorageRequest<VerifyCodeResult>("authVerifyCode", {
+          email,
+          code,
+        });
     if (!result.verified || !result.token) {
       return NextResponse.json(
         {

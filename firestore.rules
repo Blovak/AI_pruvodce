@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Veškerý přístup vede přes serverový Worker a jeho IAM servisní účet.
+    // Klientská aplikace nemá přímý přístup k provozním ani osobním datům.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

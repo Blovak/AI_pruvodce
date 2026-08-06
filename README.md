@@ -21,12 +21,14 @@ hlasu telefonu nebo počítače.
 - uložit výklad na jeden rok a při návratu na stejné místo jej znovu použít,
 - pro ručně vybraný bod, výsledek hledání nebo cíl v okolí použít pouze
   výklad se stejným přesným cache klíčem, nikoli jiný blízký bod,
-- anonymně měřit využití a chyby v soukromé Google tabulce.
+- anonymně měřit využití a chyby ve Firestore a asynchronně je kopírovat do
+  soukromé Google tabulky.
 
 ## Lokální spuštění
 
-Požadavky: Node.js 22+, DeepSeek API klíč a nakonfigurovaný Apps Script
-endpoint pro přihlášení, analytiku a cache.
+Požadavky: Node.js 22+, DeepSeek API klíč, Cloud Firestore a nakonfigurovaný
+Apps Script endpoint pro e-mailové OTP a kopii analytiky. Bez Firebase
+proměnných aplikace dočasně používá původní Apps Script úložiště.
 
 ```bash
 npm install
@@ -39,6 +41,10 @@ Do `.env.local` vložte svůj klíč:
 DEEPSEEK_API_KEY=sk-...
 GOOGLE_LOG_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
 GOOGLE_LOG_TOKEN=...
+FIREBASE_PROJECT_ID=...
+FIREBASE_CLIENT_EMAIL=...
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
+AUTH_SECRET=...
 ```
 
 Potom spusťte:
@@ -71,7 +77,7 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - Šestimístný kód platí 10 minut a dovolí nejvýše 5 pokusů. Odeslání je
   omezené proti zneužití a token konkrétního zařízení platí 180 dní.
 - Anonymní provozní identifikátor relace neobsahuje e-mail ani IP adresu.
-- Hlas je syntetický, vytvořený AI; aplikace to u přehrávače výslovně uvádí.
+- Hlas vytváří bezplatné systémové Web Speech API přímo v zařízení.
 
 ## Architektura připravená na rozvoj
 
@@ -81,8 +87,11 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - `server/index.ts` — produkční Cloudflare Worker se stejnými API cestami,
 - `lib/deepseek.ts` — DeepSeek klient, validace JSON výstupu a dohledání
   zdrojových podkladů z české Wikipedie,
+- `lib/firestore-rest.ts` a `lib/firestore-storage.ts` — serverový přístup do
+  Firestore, autentizace, geohash cache a provozní data,
 - `scripts/build-server.mjs` — vytvoření jednoho serverového balíčku pro hosting,
-- `google-apps-script` — verzovaný endpoint pro analytiku a cache v Google
+- `scripts/firestore-migration.ts` — idempotentní přenos existujících listů,
+- `google-apps-script` — e-mailová brána a asynchronní kopie analytiky v Google
   Sheets; historická MP3 z předchozí verze zůstávají soukromá,
 - `components` — oddělené uživatelské rozhraní, mapa a hledání,
 - `lib/types.ts` — sdílený kontrakt dat průvodce.
@@ -94,6 +103,7 @@ ukládání oblíbených míst a Realtime API pro živý rozhovor.
 ## Použité služby
 
 - [DeepSeek API](https://api-docs.deepseek.com/)
+- [Cloud Firestore](https://firebase.google.com/docs/firestore)
 - [MediaWiki API](https://www.mediawiki.org/wiki/API:Main_page)
 - [OpenStreetMap](https://www.openstreetmap.org/) a [Nominatim](https://nominatim.org/)
 
@@ -111,9 +121,10 @@ serverové aplikaci a veřejný frontend volá pouze její API. Proměnná
 Veřejná URL načítá přímo kořenový `index.html`; sestavení k němu vytvoří pouze
 statické soubory `assets/app.js` a `assets/app.css`.
 
-Produkční backend používá zabezpečený Apps Script endpoint pro anonymizovanou
-analytiku, cache i emailové přihlášení. List `Místa a MP3` uchovává souřadnice, odpověď AI a platnost;
-sloupce se staršími MP3 zůstávají kvůli historii. Nové uživatelské rozhraní MP3
-nenabízí ani negeneruje. Sdílený token je uložen pouze v Script Properties a v
-serverových secrets. Pokud Google úložiště selže, průvodce se pokusí požadavek
-dokončit přímo přes DeepSeek.
+Produkční backend používá Firestore jako primární úložiště autentizace, cache a
+provozních dat. Apps Script pouze odesílá OTP e-maily a na pozadí kopíruje
+anonymizovanou analytiku do původní Google tabulky. List `Místa a MP3` zůstává
+jako historie a migrační záloha. Nové uživatelské rozhraní MP3 nenabízí ani
+negeneruje. Firestore servisní účet, `AUTH_SECRET` i Apps Script token jsou
+pouze v serverových secrets. Podrobný postup je v
+[`FIRESTORE_MIGRATION.md`](FIRESTORE_MIGRATION.md).

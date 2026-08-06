@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authStorageRequest } from "@/lib/auth-server";
+import {
+  authStorageRequest,
+  firestoreAuthConfigured,
+  serverStorageEnv,
+} from "@/lib/auth-server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
+import {
+  AuthRateLimitError,
+  prepareAuthCode,
+} from "@/lib/firestore-storage";
 
 type RequestCodeResult = {
   sent?: boolean;
@@ -22,10 +30,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await authStorageRequest<RequestCodeResult>(
-      "authRequestCode",
-      { email },
-    );
+    let result: RequestCodeResult;
+    if (firestoreAuthConfigured()) {
+      const code = await prepareAuthCode(serverStorageEnv(), email);
+      result = await authStorageRequest<RequestCodeResult>(
+        "sendAuthCodeEmail",
+        { email, code },
+      );
+    } else {
+      result = await authStorageRequest<RequestCodeResult>(
+        "authRequestCode",
+        { email },
+      );
+    }
     if (!result.sent) {
       return NextResponse.json(
         {
@@ -37,6 +54,15 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ sent: true, email }, { headers });
   } catch (error) {
+    if (error instanceof AuthRateLimitError) {
+      return NextResponse.json(
+        {
+          error: "Další kód bude možné poslat za chvíli.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        },
+        { status: 429, headers },
+      );
+    }
     console.error("Auth request failed", error);
     return NextResponse.json(
       { error: "Přihlašovací kód se nepodařilo odeslat." },

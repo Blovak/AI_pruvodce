@@ -2,12 +2,29 @@ import {
   createDeepSeekGuide,
   defaultDeepSeekModel,
 } from "../lib/deepseek";
+import { firestoreConfigured } from "../lib/firestore-rest";
+import {
+  authenticateSession,
+  AuthRateLimitError,
+  findCachedGuide,
+  prepareAuthCode,
+  revokeSession,
+  saveAnalyticsEvent,
+  saveCachedGuide,
+  touchCachedGuide,
+  touchSession,
+  verifyAuthCode,
+} from "../lib/firestore-storage";
 
 type WorkerEnv = {
   DEEPSEEK_API_KEY?: string;
   DEEPSEEK_MODEL?: string;
   GOOGLE_LOG_URL?: string;
   GOOGLE_LOG_TOKEN?: string;
+  FIREBASE_PROJECT_ID?: string;
+  FIREBASE_CLIENT_EMAIL?: string;
+  FIREBASE_PRIVATE_KEY?: string;
+  AUTH_SECRET?: string;
 };
 
 type AuthResult = {
@@ -52,6 +69,10 @@ const allowedOrigins = new Set([
   "https://blovak.github.io",
   "http://localhost:3000",
 ]);
+
+function useFirestore(env: WorkerEnv) {
+  return firestoreConfigured(env) && Boolean(env.AUTH_SECRET);
+}
 
 function cors(origin: string | null) {
   return {
@@ -122,9 +143,19 @@ function validEmail(value: unknown) {
     : "";
 }
 
-async function authenticate(request: Request, env: WorkerEnv) {
+async function authenticate(
+  request: Request,
+  env: WorkerEnv,
+  context?: ExecutionContext,
+) {
   const authToken = requestAuthToken(request);
   if (!authToken) return null;
+  if (useFirestore(env)) {
+    const session = await authenticateSession(env, authToken);
+    if (!session) return null;
+    if (context) context.waitUntil(touchSession(env, session));
+    return { email: session.email, token: authToken };
+  }
   const result = await googleRequest<AuthResult>(env, "authSession", {
     authToken,
   });
@@ -142,6 +173,35 @@ async function authRequestCode(
   const email = validEmail(body.email);
   if (!email) {
     return json({ error: "Zadejte platnou e-mailovou adresu." }, 400, origin);
+  }
+  if (useFirestore(env)) {
+    try {
+      const code = await prepareAuthCode(env, email);
+      const mail = await googleRequest<AuthResult>(env, "sendAuthCodeEmail", {
+        email,
+        code,
+      });
+      if (!mail?.sent) {
+        return json(
+          { error: "Přihlašovací e-mail se nepodařilo odeslat." },
+          503,
+          origin,
+        );
+      }
+      return json({ sent: true, email }, 200, origin);
+    } catch (error) {
+      if (error instanceof AuthRateLimitError) {
+        return json(
+          {
+            error: "Další kód bude možné poslat za chvíli.",
+            retryAfterSeconds: error.retryAfterSeconds,
+          },
+          429,
+          origin,
+        );
+      }
+      throw error;
+    }
   }
   const result = await googleRequest<AuthResult>(env, "authRequestCode", {
     email,
@@ -177,6 +237,30 @@ async function authVerifyCode(
   if (!email || !/^\d{6}$/.test(code)) {
     return json({ error: "Zadejte platný šestimístný kód." }, 400, origin);
   }
+  if (useFirestore(env)) {
+    const result = await verifyAuthCode(env, email, code);
+    if (!result.verified || !result.token) {
+      return json(
+        {
+          error:
+            result.error === "too_many_attempts"
+              ? "Příliš mnoho pokusů. Nechte si poslat nový kód."
+              : "Kód není platný nebo už vypršel.",
+        },
+        401,
+        origin,
+      );
+    }
+    return json(
+      {
+        token: result.token,
+        expiresAt: result.expiresAt,
+        user: { email },
+      },
+      200,
+      origin,
+    );
+  }
   const result = await googleRequest<AuthResult>(env, "authVerifyCode", {
     email,
     code,
@@ -208,8 +292,9 @@ async function authSession(
   request: Request,
   env: WorkerEnv,
   origin: string | null,
+  context: ExecutionContext,
 ) {
-  const user = await authenticate(request, env);
+  const user = await authenticate(request, env, context);
   return user
     ? json({ user: { email: user.email } }, 200, origin)
     : json({ error: "Relace není platná." }, 401, origin);
@@ -222,7 +307,11 @@ async function authLogout(
 ) {
   const authToken = requestAuthToken(request);
   if (authToken) {
-    await googleRequest<AuthResult>(env, "authLogout", { authToken });
+    if (useFirestore(env)) {
+      await revokeSession(env, authToken);
+    } else {
+      await googleRequest<AuthResult>(env, "authLogout", { authToken });
+    }
   }
   return json({ loggedOut: true }, 200, origin);
 }
@@ -298,6 +387,7 @@ async function guide(
   env: WorkerEnv,
   origin: string | null,
   analytics: Analytics,
+  context: ExecutionContext,
 ) {
   const body = (await request.json()) as Record<string, unknown>;
   const latitude = Number(body.latitude);
@@ -326,23 +416,34 @@ async function guide(
 
   if (!userQuestion) {
     try {
-      const cached = await googleRequest<CachedGuide>(
-        env,
-        "cacheGet",
-        exactPoint
-          ? {
-              cacheKey: key,
-              requiredModelPrefix: cacheModel,
-            }
-          : {
-              cacheKey: key,
-              latitude,
-              longitude,
-              maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
-              requiredModelPrefix: cacheModel,
-            },
-      );
+      const cacheRequest = exactPoint
+        ? {
+            cacheKey: key,
+            requiredModelPrefix: cacheModel,
+          }
+        : {
+            cacheKey: key,
+            latitude,
+            longitude,
+            maxDistanceMeters: GUIDE_CACHE_RADIUS_METERS,
+            requiredModelPrefix: cacheModel,
+          };
+      const firestoreMatch = useFirestore(env)
+        ? await findCachedGuide(env, cacheRequest)
+        : null;
+      const cached = firestoreMatch
+        ? {
+            guide: firestoreMatch.guide,
+            cacheKey: firestoreMatch.cacheKey,
+            distanceMeters: firestoreMatch.distanceMeters,
+          }
+        : useFirestore(env)
+          ? null
+          : await googleRequest<CachedGuide>(env, "cacheGet", cacheRequest);
       if (cached?.guide) {
+        if (firestoreMatch) {
+          context.waitUntil(touchCachedGuide(env, firestoreMatch));
+        }
         const matchedKey = cached.cacheKey || key;
         analytics.detail =
           exactPoint
@@ -392,14 +493,19 @@ async function guide(
   if (userQuestion) return json(generated, 200, origin);
 
   try {
-    await googleRequest(env, "cacheSaveGuide", {
+    const cachedGuide = {
       cacheKey: key,
       latitude: Number(latitude.toFixed(4)),
       longitude: Number(longitude.toFixed(4)),
       place: location,
       guide: generated,
       textModel: cacheModel,
-    });
+    };
+    if (useFirestore(env)) {
+      await saveCachedGuide(env, cachedGuide);
+    } else {
+      await googleRequest(env, "cacheSaveGuide", cachedGuide);
+    }
     analytics.detail = exactPoint
       ? "cache_created_selected_point"
       : "cache_created";
@@ -419,19 +525,40 @@ async function guide(
 }
 
 async function logUsage(env: WorkerEnv, analytics: Analytics) {
-  if (!env.GOOGLE_LOG_URL || !env.GOOGLE_LOG_TOKEN) return;
-
-  try {
-    await fetch(env.GOOGLE_LOG_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        token: env.GOOGLE_LOG_TOKEN,
-        event: analytics,
+  const storedAnalytics = {
+    ...analytics,
+    latitude: Number.isFinite(analytics.latitude)
+      ? Number(Number(analytics.latitude).toFixed(2))
+      : undefined,
+    longitude: Number.isFinite(analytics.longitude)
+      ? Number(Number(analytics.longitude).toFixed(2))
+      : undefined,
+  };
+  const writes: Promise<unknown>[] = [];
+  if (useFirestore(env)) {
+    writes.push(saveAnalyticsEvent(env, storedAnalytics));
+  }
+  if (env.GOOGLE_LOG_URL && env.GOOGLE_LOG_TOKEN) {
+    writes.push(
+      fetch(env.GOOGLE_LOG_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          token: env.GOOGLE_LOG_TOKEN,
+          event: analytics,
+        }),
+      }).then((response) => {
+        if (!response.ok) {
+          throw new Error(`analytics_sheet_http_${response.status}`);
+        }
       }),
-    });
-  } catch (error) {
-    console.error("Analytics logging failed", error);
+    );
+  }
+  const results = await Promise.allSettled(writes);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("Analytics logging failed", result.reason);
+    }
   }
 }
 
@@ -457,7 +584,14 @@ export default {
 
     try {
       if (request.method === "GET" && url.pathname === "/api/health") {
-        return json({ status: "ok" }, 200, origin);
+        return json(
+          {
+            status: "ok",
+            storage: useFirestore(env) ? "firestore" : "google-sheets",
+          },
+          200,
+          origin,
+        );
       }
       let response: Response;
       if (
@@ -474,7 +608,7 @@ export default {
         request.method === "GET" &&
         url.pathname === "/api/auth/session"
       ) {
-        response = await authSession(request, env, origin);
+        response = await authSession(request, env, origin, context);
       } else if (
         request.method === "POST" &&
         url.pathname === "/api/auth/logout"
@@ -483,7 +617,7 @@ export default {
       } else if (
         (url.pathname === "/api/geocode" ||
           url.pathname === "/api/guide") &&
-        !(await authenticate(request, env))
+        !(await authenticate(request, env, context))
       ) {
         response = json(
           { error: "Pro pokračování se přihlaste e-mailem." },
@@ -493,7 +627,7 @@ export default {
       } else if (request.method === "GET" && url.pathname === "/api/geocode") {
         response = await geocode(url, origin, analytics);
       } else if (request.method === "POST" && url.pathname === "/api/guide") {
-        response = await guide(request, env, origin, analytics);
+        response = await guide(request, env, origin, analytics, context);
       } else {
         response = json({ error: "Endpoint neexistuje." }, 404, origin);
       }

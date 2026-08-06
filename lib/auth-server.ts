@@ -10,6 +10,19 @@ function bearerToken(request: Request) {
   return match?.[1] || "";
 }
 
+export function firestoreAuthConfigured() {
+  return firestoreConfigured(serverStorageEnv()) && Boolean(process.env.AUTH_SECRET);
+}
+
+export function serverStorageEnv() {
+  return {
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
+    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL,
+    FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY,
+    AUTH_SECRET: process.env.AUTH_SECRET,
+  };
+}
+
 export async function authStorageRequest<T>(
   operation: string,
   data: Record<string, unknown>,
@@ -36,6 +49,16 @@ export async function authenticateRequest(request: Request) {
   const token = bearerToken(request);
   if (!token) return null;
 
+  if (firestoreAuthConfigured()) {
+    const env = serverStorageEnv();
+    const session = await authenticateSession(env, token);
+    if (!session) return null;
+    void touchSession(env, session).catch((error) => {
+      console.error("Session touch failed", error);
+    });
+    return { email: session.email, token };
+  }
+
   const result = await authStorageRequest<AuthStorageResponse>("authSession", {
     authToken: token,
   });
@@ -43,3 +66,5 @@ export async function authenticateRequest(request: Request) {
     ? { email: result.email, token }
     : null;
 }
+import { firestoreConfigured } from "@/lib/firestore-rest";
+import { authenticateSession, touchSession } from "@/lib/firestore-storage";

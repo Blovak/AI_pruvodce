@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authStorageRequest } from "@/lib/auth-server";
+import {
+  authStorageRequest,
+  firestoreAuthConfigured,
+  serverStorageEnv,
+} from "@/lib/auth-server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
+import { revokeSession } from "@/lib/firestore-storage";
 
 function bearerToken(request: Request) {
   const authorization = request.headers.get("authorization") || "";
@@ -12,7 +17,11 @@ export async function POST(request: NextRequest) {
   try {
     const authToken = bearerToken(request);
     if (authToken) {
-      await authStorageRequest("authLogout", { authToken });
+      if (firestoreAuthConfigured()) {
+        await revokeSession(serverStorageEnv(), authToken);
+      } else {
+        await authStorageRequest("authLogout", { authToken });
+      }
     }
   } catch (error) {
     console.error("Auth logout failed", error);
