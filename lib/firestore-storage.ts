@@ -461,9 +461,10 @@ export async function saveAnalyticsEvent(
 }
 
 export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
-  const [userRecords, positions] = await Promise.all([
+  const [userRecords, positions, sessions] = await Promise.all([
     queryDocuments<User>(env, "users"),
     queryDocuments<GuideCache>(env, "guideCache"),
+    queryDocuments<AuthSession>(env, "authSessions"),
   ]);
 
   const positionsByUser = new Map<string, number>();
@@ -474,11 +475,25 @@ export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
     }
   }
 
+  const lastLoginByUser = new Map<string, string>();
+  for (const { data } of sessions) {
+    const email = String(data.email || "").trim().toLowerCase();
+    const createdAt = String(data.createdAt || "");
+    if (
+      email &&
+      validDate(createdAt) > validDate(lastLoginByUser.get(email))
+    ) {
+      lastLoginByUser.set(email, createdAt);
+    }
+  }
+
   const users = userRecords
     .map(({ data }) => ({
       email: String(data.email || ""),
       createdAt: String(data.createdAt || ""),
-      lastLoginAt: String(data.lastLoginAt || ""),
+      lastLoginAt:
+        lastLoginByUser.get(String(data.email || "").toLowerCase()) ||
+        String(data.lastLoginAt || ""),
       status: String(data.status || ""),
       newPositions:
         positionsByUser.get(String(data.email || "").toLowerCase()) || 0,

@@ -194,7 +194,7 @@ try {
   const adminStats = await getAdminStats(env);
   assert.equal(adminStats.users.length, 1);
   assert.equal(adminStats.users[0].email, email);
-  assert.ok(Date.parse(adminStats.users[0].lastLoginAt) > 0);
+  assert.equal(adminStats.users[0].lastLoginAt, session?.createdAt);
   assert.equal(adminStats.positionLookups, 1);
   assert.equal(adminStats.users[0].newPositions, 1);
   console.log("Firestore storage tests passed.");

@@ -26,6 +26,9 @@ hlasu telefonu nebo počítače.
 - nabídnout účtu správce chráněný přehled uživatelů, posledních přihlášení,
   celkového počtu vytvořených pozic a počtu nových pozic podle uživatele.
 
+Čas posledního přihlášení se určuje z vytvoření poslední úspěšně ověřené
+přihlašovací relace. Vyžádání nového číselného kódu tento údaj nemění.
+
 ## Lokální spuštění
 
 Požadavky: Node.js 22+, DeepSeek API klíč, Cloud Firestore a nakonfigurovaný
