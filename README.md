@@ -23,8 +23,8 @@ hlasu telefonu nebo počítače.
   výklad se stejným přesným cache klíčem, nikoli jiný blízký bod,
 - měřit využití a chyby ve Firestore a asynchronně je kopírovat do soukromé
   Google tabulky; načtení průvodce se eviduje pod přihlášeným e-mailem,
-- nabídnout účtu správce chráněný přehled uživatelů, posledních přihlášení a
-  počtu dohledaných pozic.
+- nabídnout účtu správce chráněný přehled uživatelů, posledních přihlášení,
+  celkového počtu vytvořených pozic a počtu nových pozic podle uživatele.
 
 ## Lokální spuštění
 

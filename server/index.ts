@@ -503,6 +503,7 @@ async function guide(
       place: location,
       guide: generated,
       textModel: cacheModel,
+      createdByEmail: String(analytics.userEmail || ""),
     };
     if (useFirestore(env)) {
       await saveCachedGuide(env, cachedGuide);

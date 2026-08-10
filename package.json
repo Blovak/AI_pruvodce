@@ -13,6 +13,7 @@
     "test:auth": "npm run build && node scripts/test-auth.mjs",
     "test:firestore": "node scripts/run-firestore-test.mjs",
     "migrate:firestore": "node scripts/run-firestore-migration.mjs",
+    "backfill:position-owners": "node scripts/run-firestore-position-owners.mjs",
     "test:deepseek": "node scripts/test-deepseek.mjs",
     "test:deepseek:live": "node scripts/smoke-deepseek-live.mjs",
     "typecheck": "tsc --noEmit"

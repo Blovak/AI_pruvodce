@@ -170,6 +170,7 @@ try {
     place: "Staroměstské náměstí",
     guide: { placeName: "Staroměstské náměstí" },
     textModel: "deepseek-v4-flash:nearby-directions-v1",
+    createdByEmail: email,
   });
   const cached = await findCachedGuide(env, {
     cacheKey: "50.0875,14.4213",
@@ -195,6 +196,7 @@ try {
   assert.equal(adminStats.users[0].email, email);
   assert.ok(Date.parse(adminStats.users[0].lastLoginAt) > 0);
   assert.equal(adminStats.positionLookups, 1);
+  assert.equal(adminStats.users[0].newPositions, 1);
   console.log("Firestore storage tests passed.");
 } finally {
   globalThis.fetch = originalFetch;

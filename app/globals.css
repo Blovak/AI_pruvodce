@@ -1466,6 +1466,12 @@ button.nearby-item:focus-visible {
   border-bottom: 0;
 }
 
+.admin-table-wrap .admin-position-count {
+  color: var(--forest);
+  font-weight: 800;
+  text-align: center;
+}
+
 .admin-loading,
 .admin-error {
   min-height: 220px;

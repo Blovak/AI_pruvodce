@@ -61,17 +61,12 @@ type User = {
   status: string;
 };
 
-type UsageEvent = {
-  action?: string;
-  status?: number;
-  questionLength?: number;
-};
-
 export type AdminUser = {
   email: string;
   createdAt: string;
   lastLoginAt: string;
   status: string;
+  newPositions: number;
 };
 
 export type AdminStats = {
@@ -94,6 +89,7 @@ type GuideCache = {
   mp3Url?: string;
   driveFileId?: string;
   voiceModel?: string;
+  createdByEmail?: string;
 };
 
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -426,6 +422,7 @@ export async function saveCachedGuide(
     place: string;
     guide: Record<string, unknown>;
     textModel: string;
+    createdByEmail: string;
   },
 ) {
   const now = new Date();
@@ -464,12 +461,18 @@ export async function saveAnalyticsEvent(
 }
 
 export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
-  const [userRecords, guideEvents] = await Promise.all([
+  const [userRecords, positions] = await Promise.all([
     queryDocuments<User>(env, "users"),
-    queryDocuments<UsageEvent>(env, "usageEvents", {
-      filter: { field: "action", op: "EQUAL", value: "guide" },
-    }),
+    queryDocuments<GuideCache>(env, "guideCache"),
   ]);
+
+  const positionsByUser = new Map<string, number>();
+  for (const { data } of positions) {
+    const email = String(data.createdByEmail || "").trim().toLowerCase();
+    if (email) {
+      positionsByUser.set(email, (positionsByUser.get(email) || 0) + 1);
+    }
+  }
 
   const users = userRecords
     .map(({ data }) => ({
@@ -477,16 +480,13 @@ export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
       createdAt: String(data.createdAt || ""),
       lastLoginAt: String(data.lastLoginAt || ""),
       status: String(data.status || ""),
+      newPositions:
+        positionsByUser.get(String(data.email || "").toLowerCase()) || 0,
     }))
     .filter((user) => user.email)
     .sort(
       (left, right) =>
         validDate(right.lastLoginAt) - validDate(left.lastLoginAt),
     );
-  const positionLookups = guideEvents.filter(
-    ({ data }) =>
-      Number(data.status) === 200 && Number(data.questionLength || 0) === 0,
-  ).length;
-
-  return { users, positionLookups };
+  return { users, positionLookups: positions.length };
 }

@@ -1,4 +1,5 @@
 import { geohashForLocation } from "geofire-common";
+import { ADMIN_EMAIL } from "../lib/admin";
 import {
   FirestoreEnv,
   getDocument,
@@ -224,6 +225,7 @@ async function migrateCache(
         voiceModel: text(row[10]),
         lastUsedAt: iso(row[11]),
         hits: number(row[12]),
+        createdByEmail: ADMIN_EMAIL,
         migratedFromSheet: true,
       });
     }

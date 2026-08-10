@@ -17,6 +17,7 @@ type AdminUser = {
   createdAt: string;
   lastLoginAt: string;
   status: string;
+  newPositions: number;
 };
 
 type AdminStats = {
@@ -145,6 +146,7 @@ export function AdminPanel({
                   <tr>
                     <th>Uživatel</th>
                     <th>Poslední přihlášení</th>
+                    <th>Nové pozice</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -152,6 +154,9 @@ export function AdminPanel({
                     <tr key={user.email}>
                       <td>{user.email}</td>
                       <td>{dateLabel(user.lastLoginAt)}</td>
+                      <td className="admin-position-count">
+                        {user.newPositions}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
