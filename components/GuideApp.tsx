@@ -20,7 +20,12 @@ import {
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { welcomeGuide } from "@/lib/fallback";
-import type { GuideContent, NearbyPlace, Place } from "@/lib/types";
+import type {
+  Coordinates,
+  GuideContent,
+  NearbyPlace,
+  Place,
+} from "@/lib/types";
 import { LocationSearch } from "@/components/LocationSearch";
 import { MapView } from "@/components/MapView";
 import { apiUrl } from "@/lib/api-url";
@@ -106,6 +111,7 @@ type GuideAppProps = {
 
 export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
   const [place, setPlace] = useState<Place | null>(null);
+  const [routeOrigin, setRouteOrigin] = useState<Coordinates | null>(null);
   const [guide, setGuide] = useState<GuideContent>(welcomeGuide);
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
@@ -210,6 +216,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
     setSystemSpeaking(false);
     setGuide(welcomeGuide);
     setPlace(null);
+    setRouteOrigin(null);
     setStatus("idle");
     setMessage("");
   }, []);
@@ -316,6 +323,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
       setSearchOpen(true);
       return;
     }
+    setRouteOrigin(null);
     const operation = beginGuideOperation("locating", null);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
@@ -447,6 +455,12 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
     ) {
       return;
     }
+    if (place) {
+      setRouteOrigin({
+        latitude: place.latitude,
+        longitude: place.longitude,
+      });
+    }
     guideScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     guideScrollRef.current?.scrollIntoView({
       behavior: "smooth",
@@ -502,6 +516,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
           onSelectionStart={clearPreviousGuide}
           onSelectPoint={selectMapPoint}
           place={place}
+          routeOrigin={routeOrigin}
         />
 
         <section className="guide-panel">

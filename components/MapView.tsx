@@ -73,12 +73,14 @@ function distanceLabel(meters: number) {
 
 export function MapView({
   place,
+  routeOrigin,
   mapSelectionRequest,
   onRelocate,
   onSelectionStart,
   onSelectPoint,
 }: {
   place: Place | null;
+  routeOrigin: Coordinates | null;
   mapSelectionRequest: number;
   onRelocate: () => void;
   onSelectionStart: () => void;
@@ -232,24 +234,26 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     const leaflet = leafletRef.current;
-    if (!map || !leaflet || !currentPosition) return;
+    if (!map || !leaflet) return;
 
-    const currentLatLng: [number, number] = [
-      currentPosition.latitude,
-      currentPosition.longitude,
-    ];
-    if (!currentMarkerRef.current) {
-      currentMarkerRef.current = leaflet
-        .circleMarker(currentLatLng, {
-          radius: 8,
-          color: "#fff7e8",
-          weight: 3,
-          fillColor: "#255e53",
-          fillOpacity: 1,
-        })
-        .addTo(map);
-    } else {
-      currentMarkerRef.current.setLatLng(currentLatLng);
+    if (currentPosition) {
+      const currentLatLng: [number, number] = [
+        currentPosition.latitude,
+        currentPosition.longitude,
+      ];
+      if (!currentMarkerRef.current) {
+        currentMarkerRef.current = leaflet
+          .circleMarker(currentLatLng, {
+            radius: 8,
+            color: "#fff7e8",
+            weight: 3,
+            fillColor: "#255e53",
+            fillOpacity: 1,
+          })
+          .addTo(map);
+      } else {
+        currentMarkerRef.current.setLatLng(currentLatLng);
+      }
     }
 
     directionMarkerRef.current?.remove();
@@ -257,26 +261,30 @@ export function MapView({
     directionLineRef.current?.remove();
     directionLineRef.current = null;
 
-    const targetDistance = place
+    const directionOrigin = routeOrigin ?? currentPosition;
+    const originLatLng: [number, number] | null = directionOrigin
+      ? [directionOrigin.latitude, directionOrigin.longitude]
+      : null;
+    const targetDistance = place && directionOrigin
       ? distanceMeters(
-          currentPosition.latitude,
-          currentPosition.longitude,
+          directionOrigin.latitude,
+          directionOrigin.longitude,
           place.latitude,
           place.longitude,
         )
       : 0;
 
-    if (place && targetDistance >= 3) {
+    if (place && directionOrigin && originLatLng && targetDistance >= 3) {
       const bearing = bearingDegrees(
-        currentPosition.latitude,
-        currentPosition.longitude,
+        directionOrigin.latitude,
+        directionOrigin.longitude,
         place.latitude,
         place.longitude,
       );
       directionLineRef.current = leaflet
         .polyline(
           [
-            currentLatLng,
+            originLatLng,
             [place.latitude, place.longitude],
           ],
           {
@@ -289,7 +297,7 @@ export function MapView({
         .addTo(map);
       directionLineRef.current.bringToBack();
       directionMarkerRef.current = leaflet
-        .marker(currentLatLng, {
+        .marker(originLatLng, {
           interactive: false,
           keyboard: false,
           icon: leaflet.divIcon({
@@ -309,9 +317,9 @@ export function MapView({
     if (fittedViewportRef.current === viewportKey) return;
     fittedViewportRef.current = viewportKey;
 
-    if (place && targetDistance >= 3) {
+    if (place && originLatLng && targetDistance >= 3) {
       map.fitBounds(
-        leaflet.latLngBounds(currentLatLng, [
+        leaflet.latLngBounds(originLatLng, [
           place.latitude,
           place.longitude,
         ]),
@@ -321,10 +329,10 @@ export function MapView({
           maxZoom: 16,
         },
       );
-    } else {
-      map.setView(currentLatLng, 16);
+    } else if (originLatLng) {
+      map.setView(originLatLng, 16);
     }
-  }, [currentPosition, isPicking, mapReady, place]);
+  }, [currentPosition, isPicking, mapReady, place, routeOrigin]);
 
   const startPicking = useCallback(() => {
     const map = mapRef.current;
@@ -338,10 +346,10 @@ export function MapView({
   }, [onSelectionStart]);
 
   const selectedDistance =
-    place && currentPosition
+    place && (routeOrigin ?? currentPosition)
       ? distanceMeters(
-          currentPosition.latitude,
-          currentPosition.longitude,
+          (routeOrigin ?? currentPosition)!.latitude,
+          (routeOrigin ?? currentPosition)!.longitude,
           place.latitude,
           place.longitude,
         )
@@ -446,16 +454,18 @@ export function MapView({
         </button>
       </div>
 
-      {currentPosition && (
+      {(currentPosition || routeOrigin) && (
         <div className="map-location-legend" aria-live="polite">
-          <span>
-            <i className="current-position-swatch" />
-            Vaše poloha
-          </span>
+          {currentPosition && (
+            <span>
+              <i className="current-position-swatch" />
+              Vaše poloha
+            </span>
+          )}
           {place && (
             <span>
               <i className="selected-position-swatch" />
-              Vybraný bod
+              {routeOrigin ? "Předchozí → vybraný bod" : "Vybraný bod"}
               {selectedDistance !== null && selectedDistance >= 3 && (
                 <strong>{distanceLabel(selectedDistance)}</strong>
               )}
