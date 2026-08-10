@@ -33,6 +33,7 @@ const USAGE_HEADERS = [
   "Znaky vstupu",
   "Model",
   "Detail",
+  "Uživatel",
 ];
 
 const ERROR_HEADERS = [
@@ -957,7 +958,9 @@ function writeEvent_(item, spreadsheetId) {
   lock.waitLock(10000);
   try {
     const spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    spreadsheet.getSheetByName(SHEETS.usage).appendRow([
+    const usageSheet = spreadsheet.getSheetByName(SHEETS.usage);
+    usageSheet.getRange(1, 13).setValue(USAGE_HEADERS[12]);
+    usageSheet.appendRow([
       item.timestamp,
       safeCell_(item.session),
       safeCell_(item.action),
@@ -970,6 +973,7 @@ function writeEvent_(item, spreadsheetId) {
       item.inputChars,
       safeCell_(item.model),
       safeCell_(item.detail),
+      safeCell_(item.userEmail),
     ]);
 
     if (item.status >= 400) {
@@ -1003,6 +1007,7 @@ function normalizeEvent_(raw) {
     inputChars: boundedNumber_(raw.inputChars, 0, 4096, 0),
     model: cleanText_(raw.model, 80),
     detail: cleanText_(raw.detail, 300),
+    userEmail: normalizeEmail_(raw.userEmail),
   };
 }
 

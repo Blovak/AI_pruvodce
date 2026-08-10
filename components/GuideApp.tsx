@@ -15,6 +15,7 @@ import {
   MapPin,
   RotateCcw,
   Search,
+  ShieldCheck,
   Sparkles,
   Volume2,
 } from "lucide-react";
@@ -28,7 +29,9 @@ import type {
 } from "@/lib/types";
 import { LocationSearch } from "@/components/LocationSearch";
 import { MapView } from "@/components/MapView";
+import { AdminPanel } from "@/components/AdminPanel";
 import { apiUrl } from "@/lib/api-url";
+import { isAdminEmail } from "@/lib/admin";
 import { getSessionHeaders } from "@/lib/session";
 
 type Status = "idle" | "locating" | "loading" | "ready" | "error";
@@ -116,6 +119,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
   const [mapSelectionRequest, setMapSelectionRequest] = useState(0);
   const [question, setQuestion] = useState("");
   const [systemSpeaking, setSystemSpeaking] = useState(false);
@@ -127,6 +131,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
   const guideControllerRef = useRef<AbortController | null>(null);
   const compassCleanupRef = useRef<(() => void) | null>(null);
   const guideScrollRef = useRef<HTMLDivElement | null>(null);
+  const closeAdmin = useCallback(() => setAdminOpen(false), []);
 
   const handleOrientation = useCallback((rawEvent: Event) => {
     const event = rawEvent as CompassOrientationEvent;
@@ -488,12 +493,20 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
             <Compass size={20} />
           </span>
           <span>Místopis</span>
-          <em>BETA</em>
         </a>
         <nav className="topnav" aria-label="Hlavní navigace">
           <button onClick={() => setSearchOpen(true)} type="button">
             <Search size={16} /> Najít místo
           </button>
+          {isAdminEmail(userEmail) && (
+            <button
+              className="admin-nav-button"
+              onClick={() => setAdminOpen(true)}
+              type="button"
+            >
+              <ShieldCheck size={16} /> Administrace
+            </button>
+          )}
           <span className="signed-in-email" title={userEmail}>
             {userEmail}
           </span>
@@ -823,6 +836,9 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
           loadGuide({ ...nextPlace, exactPoint: true })
         }
       />
+      {isAdminEmail(userEmail) && (
+        <AdminPanel open={adminOpen} onClose={closeAdmin} />
+      )}
     </main>
   );
 }

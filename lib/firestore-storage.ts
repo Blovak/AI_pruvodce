@@ -61,6 +61,24 @@ type User = {
   status: string;
 };
 
+type UsageEvent = {
+  action?: string;
+  status?: number;
+  questionLength?: number;
+};
+
+export type AdminUser = {
+  email: string;
+  createdAt: string;
+  lastLoginAt: string;
+  status: string;
+};
+
+export type AdminStats = {
+  users: AdminUser[];
+  positionLookups: number;
+};
+
 type GuideCache = {
   cacheKey: string;
   latitude: number;
@@ -443,4 +461,32 @@ export async function saveAnalyticsEvent(
       error: event.detail || "Požadavek skončil chybou.",
     });
   }
+}
+
+export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
+  const [userRecords, guideEvents] = await Promise.all([
+    queryDocuments<User>(env, "users"),
+    queryDocuments<UsageEvent>(env, "usageEvents", {
+      filter: { field: "action", op: "EQUAL", value: "guide" },
+    }),
+  ]);
+
+  const users = userRecords
+    .map(({ data }) => ({
+      email: String(data.email || ""),
+      createdAt: String(data.createdAt || ""),
+      lastLoginAt: String(data.lastLoginAt || ""),
+      status: String(data.status || ""),
+    }))
+    .filter((user) => user.email)
+    .sort(
+      (left, right) =>
+        validDate(right.lastLoginAt) - validDate(left.lastLoginAt),
+    );
+  const positionLookups = guideEvents.filter(
+    ({ data }) =>
+      Number(data.status) === 200 && Number(data.questionLength || 0) === 0,
+  ).length;
+
+  return { users, positionLookups };
 }

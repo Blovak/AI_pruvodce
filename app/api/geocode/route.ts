@@ -3,7 +3,7 @@ import { corsHeaders, corsPreflight } from "@/lib/cors";
 import { authenticateRequest } from "@/lib/auth-server";
 
 const headers = {
-  "User-Agent": "Mistopis-beta/0.1 (AI location guide)",
+  "User-Agent": "Mistopis/1.0 (AI location guide)",
   "Accept-Language": "cs,en;q=0.7",
 };
 

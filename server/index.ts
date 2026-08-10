@@ -2,11 +2,13 @@ import {
   createDeepSeekGuide,
   defaultDeepSeekModel,
 } from "../lib/deepseek";
+import { isAdminEmail } from "../lib/admin";
 import { firestoreConfigured } from "../lib/firestore-rest";
 import {
   authenticateSession,
   AuthRateLimitError,
   findCachedGuide,
+  getAdminStats,
   prepareAuthCode,
   revokeSession,
   saveAnalyticsEvent,
@@ -50,6 +52,7 @@ type Analytics = {
   inputChars?: number;
   model?: string;
   detail?: string;
+  userEmail?: string;
 };
 
 type ExecutionContext = {
@@ -322,7 +325,7 @@ async function geocode(
   analytics: Analytics,
 ) {
   const headers = {
-    "User-Agent": "Mistopis-beta/0.1 (AI location guide)",
+    "User-Agent": "Mistopis/1.0 (AI location guide)",
     "Accept-Language": "cs,en;q=0.7",
   };
   const query = url.searchParams.get("q")?.trim();
@@ -594,6 +597,13 @@ export default {
         );
       }
       let response: Response;
+      const protectedPath =
+        url.pathname === "/api/geocode" ||
+        url.pathname === "/api/guide" ||
+        url.pathname === "/api/admin/stats";
+      const authenticatedUser = protectedPath
+        ? await authenticate(request, env, context)
+        : null;
       if (
         request.method === "POST" &&
         url.pathname === "/api/auth/request-code"
@@ -614,19 +624,31 @@ export default {
         url.pathname === "/api/auth/logout"
       ) {
         response = await authLogout(request, env, origin);
-      } else if (
-        (url.pathname === "/api/geocode" ||
-          url.pathname === "/api/guide") &&
-        !(await authenticate(request, env, context))
-      ) {
+      } else if (protectedPath && !authenticatedUser) {
         response = json(
           { error: "Pro pokračování se přihlaste e-mailem." },
           401,
           origin,
         );
+      } else if (
+        request.method === "GET" &&
+        url.pathname === "/api/admin/stats"
+      ) {
+        if (!isAdminEmail(authenticatedUser?.email)) {
+          response = json({ error: "K této části nemáte přístup." }, 403, origin);
+        } else if (!useFirestore(env)) {
+          response = json(
+            { error: "Administrace vyžaduje úložiště Firestore." },
+            503,
+            origin,
+          );
+        } else {
+          response = json(await getAdminStats(env), 200, origin);
+        }
       } else if (request.method === "GET" && url.pathname === "/api/geocode") {
         response = await geocode(url, origin, analytics);
       } else if (request.method === "POST" && url.pathname === "/api/guide") {
+        analytics.userEmail = authenticatedUser?.email;
         response = await guide(request, env, origin, analytics, context);
       } else {
         response = json({ error: "Endpoint neexistuje." }, 404, origin);

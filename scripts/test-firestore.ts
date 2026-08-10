@@ -3,6 +3,7 @@ import { generateKeyPairSync, webcrypto } from "node:crypto";
 import {
   authenticateSession,
   findCachedGuide,
+  getAdminStats,
   prepareAuthCode,
   revokeSession,
   saveAnalyticsEvent,
@@ -176,8 +177,24 @@ try {
   });
   assert.equal(cached?.guide.placeName, "Staroměstské náměstí");
 
-  await saveAnalyticsEvent(env, { action: "guide", status: 200 });
+  await saveAnalyticsEvent(env, {
+    action: "guide",
+    status: 200,
+    questionLength: 0,
+    userEmail: email,
+  });
+  await saveAnalyticsEvent(env, {
+    action: "guide",
+    status: 200,
+    questionLength: 42,
+    userEmail: email,
+  });
   assert.ok([...documents.keys()].some((path) => path.startsWith("usageEvents/")));
+  const adminStats = await getAdminStats(env);
+  assert.equal(adminStats.users.length, 1);
+  assert.equal(adminStats.users[0].email, email);
+  assert.ok(Date.parse(adminStats.users[0].lastLoginAt) > 0);
+  assert.equal(adminStats.positionLookups, 1);
   console.log("Firestore storage tests passed.");
 } finally {
   globalThis.fetch = originalFetch;

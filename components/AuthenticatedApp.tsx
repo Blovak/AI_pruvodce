@@ -163,7 +163,6 @@ export function AuthenticatedApp() {
         <div className="auth-brand" aria-label="Místopis">
           <span><Compass size={24} /></span>
           Místopis
-          <em>BETA</em>
         </div>
         <div className="auth-icon">
           {step === "email" ? <Mail size={27} /> : <LockKeyhole size={27} />}
@@ -249,8 +248,8 @@ export function AuthenticatedApp() {
           </p>
         )}
         <p className="auth-privacy">
-          E-mail používáme pouze pro přihlášení. Přihlašovací kód ani token
-          zařízení neukládáme v čitelné podobě.
+          E-mail používáme pro přihlášení a interní evidenci načtených míst.
+          Přihlašovací kód ani token zařízení neukládáme v čitelné podobě.
         </p>
       </section>
     </main>

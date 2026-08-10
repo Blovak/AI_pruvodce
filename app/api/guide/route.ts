@@ -1,17 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { corsHeaders, corsPreflight } from "@/lib/cors";
 import { createDeepSeekGuide } from "@/lib/deepseek";
-import { authenticateRequest } from "@/lib/auth-server";
+import {
+  authenticateRequest,
+  firestoreAuthConfigured,
+  serverStorageEnv,
+} from "@/lib/auth-server";
+import { saveAnalyticsEvent } from "@/lib/firestore-storage";
 
 export async function POST(request: NextRequest) {
   const responseHeaders = corsHeaders(request.headers.get("origin"));
+  const startedAt = Date.now();
+  let analytics: Record<string, unknown> | null = null;
+  let userEmail = "";
   try {
-    if (!(await authenticateRequest(request))) {
+    const user = await authenticateRequest(request);
+    if (!user) {
       return NextResponse.json(
         { error: "Pro pokračování se přihlaste e-mailem." },
         { status: 401, headers: responseHeaders },
       );
     }
+    userEmail = user.email;
   } catch (error) {
     console.error("Authentication failed", error);
     return NextResponse.json(
@@ -52,6 +62,15 @@ export async function POST(request: NextRequest) {
 
     const location = (body.label || "Neznámé místo").slice(0, 300);
     const userQuestion = body.question?.trim().slice(0, 500);
+    analytics = {
+      action: "guide",
+      userEmail,
+      place: location,
+      latitude: Number(latitude.toFixed(2)),
+      longitude: Number(longitude.toFixed(2)),
+      questionLength: userQuestion?.length || 0,
+      model: process.env.DEEPSEEK_MODEL,
+    };
     const content = await createDeepSeekGuide(
       {
         apiKey: process.env.DEEPSEEK_API_KEY,
@@ -65,9 +84,36 @@ export async function POST(request: NextRequest) {
       },
     );
 
+    if (firestoreAuthConfigured()) {
+      try {
+        await saveAnalyticsEvent(serverStorageEnv(), {
+          ...analytics,
+          status: 200,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (loggingError) {
+        console.error("Guide analytics failed", loggingError);
+      }
+    }
+
     return NextResponse.json(content, { headers: responseHeaders });
   } catch (error) {
     console.error("Guide generation failed", error);
+    if (analytics && firestoreAuthConfigured()) {
+      try {
+        await saveAnalyticsEvent(serverStorageEnv(), {
+          ...analytics,
+          status: 502,
+          durationMs: Date.now() - startedAt,
+          detail:
+            error instanceof Error
+              ? error.message.slice(0, 300)
+              : "Unknown error",
+        });
+      } catch (loggingError) {
+        console.error("Guide analytics failed", loggingError);
+      }
+    }
     return NextResponse.json(
       { error: "Průvodce se teď nepodařilo připravit. Zkuste to znovu." },
       { status: 502, headers: responseHeaders },

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 const nativeFetch = globalThis.fetch;
 let deepSeekRequest;
 let cacheGetRequest;
+let analyticsEvent;
 const googleStorageUrl = "https://storage.test/apps-script";
 const authToken = "a".repeat(64);
 
@@ -21,6 +22,7 @@ globalThis.fetch = async (input, init = {}) => {
       cacheGetRequest = payload;
       return Response.json({ ok: true, hit: false });
     }
+    if (payload.event) analyticsEvent = payload.event;
     return Response.json({ ok: true });
   }
 
@@ -82,7 +84,8 @@ globalThis.fetch = async (input, init = {}) => {
 };
 
 const worker = (await import("../dist/server/index.js")).default;
-const context = { waitUntil() {} };
+const backgroundTasks = [];
+const context = { waitUntil(promise) { backgroundTasks.push(promise); } };
 const response = await worker.fetch(
   new Request("https://worker.example/api/guide", {
     method: "POST",
@@ -106,6 +109,7 @@ const response = await worker.fetch(
   context,
 );
 const guide = await response.json();
+await Promise.all(backgroundTasks.splice(0));
 
 assert.equal(response.status, 200);
 assert.equal(cacheGetRequest.cacheKey, "50.0875,14.4213");
@@ -129,6 +133,7 @@ assert.deepEqual(guide.nearby, [
   },
 ]);
 assert.equal(guide.cache.hit, false);
+assert.equal(analyticsEvent.userEmail, "test@example.com");
 
 const legacySpeech = await worker.fetch(
   new Request("https://worker.example/api/speech", {

@@ -9,9 +9,9 @@ Script Properties.
 Listy:
 
 - `Přehled` — automatické souhrnné metriky,
-- `Použití` — anonymizované provozní události,
+- `Použití` — provozní události; načtení průvodce obsahuje e-mail uživatele,
 - `Chyby` — požadavky se stavem 400 a vyšším,
-- `Zpětná vazba` — připraveno pro další beta verzi.
+- `Zpětná vazba` — připraveno pro další rozvoj aplikace.
 - `Uživatelé` — e-mail, datum prvního a posledního přihlášení,
 - `Přihlašovací kódy` — krátkodobé HMAC otisky kódů a počty pokusů,
 - `Přihlašovací relace` — HMAC otisky dlouhodobých tokenů zařízení.
@@ -35,7 +35,7 @@ Soukromí:
 
 - přesná poloha se před zápisem zaokrouhlí na dvě desetinná místa,
 - neukládají se IP adresy ani text otázek,
-- e-mail se ukládá pouze kvůli přihlášení,
+- e-mail se ukládá kvůli přihlášení a k události načtení průvodce,
 - šestimístné kódy a tokeny zařízení se ukládají pouze jako HMAC otisky,
 - kód platí 10 minut a nejvýše 5 pokusů; relace zařízení platí 180 dní.
 

@@ -8,6 +8,7 @@ const env = {
 const context = { waitUntil() {} };
 const originalFetch = globalThis.fetch;
 const deviceToken = "a".repeat(64);
+const adminToken = "b".repeat(64);
 
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
@@ -28,8 +29,14 @@ globalThis.fetch = async (input, init = {}) => {
     if (payload.operation === "authSession") {
       return Response.json({
         ok: true,
-        authenticated: payload.authToken === deviceToken,
-        email: payload.authToken === deviceToken ? "test@example.com" : "",
+        authenticated:
+          payload.authToken === deviceToken || payload.authToken === adminToken,
+        email:
+          payload.authToken === adminToken
+            ? "patrik.blovsky@gmail.com"
+            : payload.authToken === deviceToken
+              ? "test@example.com"
+              : "",
       });
     }
     if (payload.operation === "authLogout") {
@@ -99,6 +106,24 @@ try {
   assert.deepEqual(await session.json(), {
     user: { email: "test@example.com" },
   });
+
+  const forbiddenAdmin = await worker.fetch(
+    new Request("https://mistopis.test/api/admin/stats", {
+      headers: { Authorization: `Bearer ${deviceToken}` },
+    }),
+    env,
+    context,
+  );
+  assert.equal(forbiddenAdmin.status, 403);
+
+  const firestoreRequired = await worker.fetch(
+    new Request("https://mistopis.test/api/admin/stats", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    }),
+    env,
+    context,
+  );
+  assert.equal(firestoreRequired.status, 503);
 
   console.log("Email authentication worker tests passed.");
 } finally {

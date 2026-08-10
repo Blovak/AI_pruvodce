@@ -70,7 +70,7 @@ async function nearbySources(latitude: number, longitude: number) {
     try {
       const response = await fetch(wikipediaUrl(latitude, longitude, radius), {
         headers: {
-          "User-Agent": "Mistopis-beta/0.2 (AI location guide)",
+          "User-Agent": "Mistopis/1.0 (AI location guide)",
           Accept: "application/json",
         },
       });

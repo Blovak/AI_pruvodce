@@ -1,10 +1,10 @@
 # Místopis
 
-Beta verze osobního AI průvodce, který podle zvoleného bodu představí historii,
+Osobní AI průvodce, který podle zvoleného bodu představí historii,
 příběhy a zajímavosti místa. Výklad lze zdarma poslouchat pomocí systémového
 hlasu telefonu nebo počítače.
 
-## Co beta umí
+## Co aplikace umí
 
 - získat přesnou polohu z prohlížeče nebo vyhledat místo ručně,
 - přihlásit uživatele šestimístným kódem poslaným na e-mail a zapamatovat
@@ -21,8 +21,10 @@ hlasu telefonu nebo počítače.
 - uložit výklad na jeden rok a při návratu na stejné místo jej znovu použít,
 - pro ručně vybraný bod, výsledek hledání nebo cíl v okolí použít pouze
   výklad se stejným přesným cache klíčem, nikoli jiný blízký bod,
-- anonymně měřit využití a chyby ve Firestore a asynchronně je kopírovat do
-  soukromé Google tabulky.
+- měřit využití a chyby ve Firestore a asynchronně je kopírovat do soukromé
+  Google tabulky; načtení průvodce se eviduje pod přihlášeným e-mailem,
+- nabídnout účtu správce chráněný přehled uživatelů, posledních přihlášení a
+  počtu dohledaných pozic.
 
 ## Lokální spuštění
 
@@ -72,11 +74,13 @@ Aplikace poběží na [http://localhost:3000](http://localhost:3000).
 - Cache obsahuje vygenerovaný výklad. Po jednom roce se záznam přestane používat
   a aplikace vytvoří nový výklad.
 - Text doplňujících otázek se neukládá, pouze jejich délka.
-- E-mail se ukládá pouze kvůli přihlášení. Jednorázové kódy a dlouhodobé tokeny
-  zařízení jsou v úložišti pouze jako HMAC otisky.
+- E-mail se ukládá kvůli přihlášení a u událostí načtení průvodce pro interní
+  provozní přehled. Jednorázové kódy a dlouhodobé tokeny zařízení jsou v
+  úložišti pouze jako HMAC otisky.
 - Šestimístný kód platí 10 minut a dovolí nejvýše 5 pokusů. Odeslání je
   omezené proti zneužití a token konkrétního zařízení platí 180 dní.
-- Anonymní provozní identifikátor relace neobsahuje e-mail ani IP adresu.
+- Provozní identifikátor relace neobsahuje IP adresu; událost načtení průvodce
+  obsahuje samostatně e-mail přihlášeného uživatele.
 - Hlas vytváří bezplatné systémové Web Speech API přímo v zařízení.
 
 ## Architektura připravená na rozvoj
@@ -123,7 +127,7 @@ statické soubory `assets/app.js` a `assets/app.css`.
 
 Produkční backend používá Firestore jako primární úložiště autentizace, cache a
 provozních dat. Apps Script pouze odesílá OTP e-maily a na pozadí kopíruje
-anonymizovanou analytiku do původní Google tabulky. List `Místa a MP3` zůstává
+provozní analytiku do původní Google tabulky. List `Místa a MP3` zůstává
 jako historie a migrační záloha. Nové uživatelské rozhraní MP3 nenabízí ani
 negeneruje. Firestore servisní účet, `AUTH_SECRET` i Apps Script token jsou
 pouze v serverových secrets. Podrobný postup je v
