@@ -45,7 +45,10 @@ export async function authStorageRequest<T>(
   return result;
 }
 
-export async function authenticateRequest(request: Request) {
+export async function authenticateRequest(
+  request: Request,
+  options: { recordLogin?: boolean } = {},
+) {
   const token = bearerToken(request);
   if (!token) return null;
 
@@ -53,7 +56,10 @@ export async function authenticateRequest(request: Request) {
     const env = serverStorageEnv();
     const session = await authenticateSession(env, token);
     if (!session) return null;
-    void touchSession(env, session).catch((error) => {
+    const update = options.recordLogin
+      ? recordSessionLogin(env, session)
+      : touchSession(env, session);
+    void update.catch((error) => {
       console.error("Session touch failed", error);
     });
     return { email: session.email, token };
@@ -61,10 +67,15 @@ export async function authenticateRequest(request: Request) {
 
   const result = await authStorageRequest<AuthStorageResponse>("authSession", {
     authToken: token,
+    recordLogin: options.recordLogin === true,
   });
   return result.authenticated && result.email
     ? { email: result.email, token }
     : null;
 }
 import { firestoreConfigured } from "@/lib/firestore-rest";
-import { authenticateSession, touchSession } from "@/lib/firestore-storage";
+import {
+  authenticateSession,
+  recordSessionLogin,
+  touchSession,
+} from "@/lib/firestore-storage";

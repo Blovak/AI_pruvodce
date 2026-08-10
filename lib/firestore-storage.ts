@@ -51,6 +51,7 @@ type AuthSession = {
   createdAt: string;
   expiresAt: string;
   lastUsedAt: string;
+  lastLoginAt?: string;
   revoked: boolean;
 };
 
@@ -250,6 +251,7 @@ export async function verifyAuthCode(
       createdAt: nowIso,
       expiresAt,
       lastUsedAt: nowIso,
+      lastLoginAt: nowIso,
       revoked: false,
     });
     transaction.set(`users/${userId}`, {
@@ -292,6 +294,19 @@ export async function touchSession(
   await setDocument(env, `authSessions/${id}`, {
     ...storedSession,
     lastUsedAt: new Date().toISOString(),
+  });
+}
+
+export async function recordSessionLogin(
+  env: StorageEnv,
+  session: AuthSession & { id: string },
+) {
+  const { id, ...storedSession } = session;
+  const now = new Date().toISOString();
+  await setDocument(env, `authSessions/${id}`, {
+    ...storedSession,
+    lastUsedAt: now,
+    lastLoginAt: now,
   });
 }
 
@@ -478,12 +493,14 @@ export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
   const lastLoginByUser = new Map<string, string>();
   for (const { data } of sessions) {
     const email = String(data.email || "").trim().toLowerCase();
-    const createdAt = String(data.createdAt || "");
+    const lastLoginAt = String(
+      data.lastLoginAt || data.lastUsedAt || data.createdAt || "",
+    );
     if (
       email &&
-      validDate(createdAt) > validDate(lastLoginByUser.get(email))
+      validDate(lastLoginAt) > validDate(lastLoginByUser.get(email))
     ) {
-      lastLoginByUser.set(email, createdAt);
+      lastLoginByUser.set(email, lastLoginAt);
     }
   }
 

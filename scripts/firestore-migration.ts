@@ -321,6 +321,7 @@ async function migrateAuthSessions(
         createdAt: iso(row[2]),
         expiresAt: iso(row[3]),
         lastUsedAt: iso(row[4]),
+        lastLoginAt: iso(row[4]) || iso(row[2]),
         revoked: bool(row[5]),
         migratedFromSheet: true,
       });

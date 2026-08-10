@@ -44,10 +44,13 @@ const temporaryDirectory = await mkdtemp(
   path.join(tmpdir(), "mistopis-position-owners-"),
 );
 const output = path.join(temporaryDirectory, "position-owners.mjs");
+const entryPoint = process.argv.includes("--session-logins")
+  ? "scripts/firestore-session-logins.ts"
+  : "scripts/firestore-position-owners.ts";
 
 try {
   await build({
-    entryPoints: [path.resolve("scripts/firestore-position-owners.ts")],
+    entryPoints: [path.resolve(entryPoint)],
     outfile: output,
     bundle: true,
     platform: "node",

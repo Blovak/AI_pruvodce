@@ -26,8 +26,9 @@ hlasu telefonu nebo počítače.
 - nabídnout účtu správce chráněný přehled uživatelů, posledních přihlášení,
   celkového počtu vytvořených pozic a počtu nových pozic podle uživatele.
 
-Čas posledního přihlášení se určuje z vytvoření poslední úspěšně ověřené
-přihlašovací relace. Vyžádání nového číselného kódu tento údaj nemění.
+Čas posledního přihlášení se aktualizuje při úspěšném vstupu do aplikace nebo
+obnovení uložené relace přes `/api/auth/session`. Vyžádání nového číselného
+kódu tento údaj nemění.
 
 ## Lokální spuštění
 

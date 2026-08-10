@@ -5,6 +5,7 @@ import {
   findCachedGuide,
   getAdminStats,
   prepareAuthCode,
+  recordSessionLogin,
   revokeSession,
   saveAnalyticsEvent,
   saveCachedGuide,
@@ -160,6 +161,12 @@ try {
   assert.match(verified.token || "", /^[A-Za-z0-9_-]{64}$/);
   const session = await authenticateSession(env, verified.token || "");
   assert.equal(session?.email, email);
+  await recordSessionLogin(env, session!);
+  const recordedSession = await authenticateSession(env, verified.token || "");
+  assert.ok(
+    Date.parse(recordedSession?.lastLoginAt || "") >=
+      Date.parse(session?.createdAt || ""),
+  );
   await revokeSession(env, verified.token || "");
   assert.equal(await authenticateSession(env, verified.token || ""), null);
 
@@ -194,7 +201,7 @@ try {
   const adminStats = await getAdminStats(env);
   assert.equal(adminStats.users.length, 1);
   assert.equal(adminStats.users[0].email, email);
-  assert.equal(adminStats.users[0].lastLoginAt, session?.createdAt);
+  assert.equal(adminStats.users[0].lastLoginAt, recordedSession?.lastLoginAt);
   assert.equal(adminStats.positionLookups, 1);
   assert.equal(adminStats.users[0].newPositions, 1);
   console.log("Firestore storage tests passed.");

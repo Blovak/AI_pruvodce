@@ -9,6 +9,7 @@ const context = { waitUntil() {} };
 const originalFetch = globalThis.fetch;
 const deviceToken = "a".repeat(64);
 const adminToken = "b".repeat(64);
+let sessionRecordLogin = false;
 
 globalThis.fetch = async (input, init = {}) => {
   const url = String(input);
@@ -27,6 +28,9 @@ globalThis.fetch = async (input, init = {}) => {
       });
     }
     if (payload.operation === "authSession") {
+      if (payload.authToken === deviceToken) {
+        sessionRecordLogin = payload.recordLogin === true;
+      }
       return Response.json({
         ok: true,
         authenticated:
@@ -106,6 +110,7 @@ try {
   assert.deepEqual(await session.json(), {
     user: { email: "test@example.com" },
   });
+  assert.equal(sessionRecordLogin, true);
 
   const forbiddenAdmin = await worker.fetch(
     new Request("https://mistopis.test/api/admin/stats", {

@@ -10,6 +10,7 @@ import {
   findCachedGuide,
   getAdminStats,
   prepareAuthCode,
+  recordSessionLogin,
   revokeSession,
   saveAnalyticsEvent,
   saveCachedGuide,
@@ -150,17 +151,25 @@ async function authenticate(
   request: Request,
   env: WorkerEnv,
   context?: ExecutionContext,
+  recordLogin = false,
 ) {
   const authToken = requestAuthToken(request);
   if (!authToken) return null;
   if (useFirestore(env)) {
     const session = await authenticateSession(env, authToken);
     if (!session) return null;
-    if (context) context.waitUntil(touchSession(env, session));
+    if (context) {
+      context.waitUntil(
+        recordLogin
+          ? recordSessionLogin(env, session)
+          : touchSession(env, session),
+      );
+    }
     return { email: session.email, token: authToken };
   }
   const result = await googleRequest<AuthResult>(env, "authSession", {
     authToken,
+    recordLogin,
   });
   return result?.authenticated && result.email
     ? { email: result.email, token: authToken }
@@ -297,7 +306,7 @@ async function authSession(
   origin: string | null,
   context: ExecutionContext,
 ) {
-  const user = await authenticate(request, env, context);
+  const user = await authenticate(request, env, context, true);
   return user
     ? json({ user: { email: user.email } }, 200, origin)
     : json({ error: "Relace není platná." }, 401, origin);

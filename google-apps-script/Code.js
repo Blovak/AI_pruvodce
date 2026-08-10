@@ -392,7 +392,10 @@ function authSession_(spreadsheetId, payload) {
 
   const lastUsed =
     match.values[4] instanceof Date ? match.values[4].getTime() : 0;
-  if (Date.now() - lastUsed > 24 * 60 * 60 * 1000) {
+  if (
+    payload.recordLogin === true ||
+    Date.now() - lastUsed > 24 * 60 * 60 * 1000
+  ) {
     sheets.sessions.getRange(match.row, 5).setValue(new Date());
   }
   return {

@@ -5,7 +5,7 @@ import { corsHeaders, corsPreflight } from "@/lib/cors";
 export async function GET(request: NextRequest) {
   const headers = corsHeaders(request.headers.get("origin"));
   try {
-    const user = await authenticateRequest(request);
+    const user = await authenticateRequest(request, { recordLogin: true });
     return user
       ? NextResponse.json({ user: { email: user.email } }, { headers })
       : NextResponse.json(
