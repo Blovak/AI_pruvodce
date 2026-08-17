@@ -1474,6 +1474,114 @@ button.nearby-item:focus-visible {
   min-width: 0;
 }
 
+.admin-import-section {
+  min-width: 0;
+}
+
+.admin-import-description,
+.admin-import-empty {
+  margin: 12px 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.admin-import-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-import-grid article {
+  padding: 14px;
+  display: grid;
+  gap: 4px;
+  background: #fffdf7;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.admin-import-grid span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-import-grid strong {
+  color: var(--forest);
+  font-family: var(--font-display), serif;
+  font-size: 25px;
+}
+
+.admin-import-status {
+  margin-top: 14px;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 9px;
+  color: var(--forest);
+  background: rgba(23, 59, 53, 0.07);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.admin-import-status svg {
+  grid-row: 1 / 3;
+}
+
+.admin-import-status small {
+  color: var(--muted);
+}
+
+.admin-import-status.is-complete {
+  color: #245f43;
+  background: rgba(65, 139, 94, 0.1);
+}
+
+.admin-import-status.is-error {
+  color: #9b452f;
+  background: rgba(164, 82, 56, 0.1);
+}
+
+.admin-import-actions {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.admin-import-actions button {
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.admin-import-start {
+  color: #fff;
+  background: var(--forest);
+  border: 1px solid var(--forest);
+}
+
+.admin-import-stop {
+  color: #fff;
+  background: #9b452f;
+  border: 1px solid #9b452f;
+}
+
+.admin-import-refresh {
+  color: var(--forest);
+  background: transparent;
+  border: 1px solid rgba(23, 59, 53, 0.28);
+}
+
+.admin-import-refresh:disabled {
+  opacity: 0.55;
+}
+
 .admin-points-map-shell {
   position: relative;
   height: 430px;
@@ -1762,6 +1870,10 @@ body.admin-map-is-expanded {
 
   .admin-refresh {
     margin-left: 0;
+  }
+
+  .admin-import-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .admin-points-map-shell {

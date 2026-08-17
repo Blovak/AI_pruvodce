@@ -31,6 +31,16 @@ Po dokončení migrace jsou cache a autentizační listy archivní zálohou.
 Firestore je jejich primárním provozním úložištěm; běžné požadavky už tyto
 listy neprohledávají.
 
+Import GPS bodů:
+
+- administrace načítá po dávkách pouze řádky listu `GPS body`, které nemají
+  ve sloupci `zpracováno` hodnotu `True`,
+- shodný JSON popisu v sousedních řádcích se do Firestore uloží jen jednou,
+- každý prošlý řádek se po bezpečném zápisu přesune do listu `Backup`, kde má
+  `zpracováno = True`, a z původního listu se odstraní,
+- zápis do databáze i archivace jsou opakovatelné; přerušený import lze z
+  administrace spustit znovu bez vytvoření duplicit.
+
 Soukromí:
 
 - přesná poloha se před zápisem zaokrouhlí na dvě desetinná místa,

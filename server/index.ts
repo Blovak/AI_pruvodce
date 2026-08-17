@@ -3,6 +3,13 @@ import {
   defaultDeepSeekModel,
 } from "../lib/deepseek";
 import { isAdminEmail } from "../lib/admin";
+import {
+  executeGpsImportStep,
+  getGpsImportJob,
+  GpsImportBusyError,
+  type GpsImportArchiveResult,
+  type GpsImportReadBatch,
+} from "../lib/admin-gps-import";
 import { firestoreConfigured } from "../lib/firestore-rest";
 import {
   authenticateSession,
@@ -610,7 +617,8 @@ export default {
       const protectedPath =
         url.pathname === "/api/geocode" ||
         url.pathname === "/api/guide" ||
-        url.pathname === "/api/admin/stats";
+        url.pathname === "/api/admin/stats" ||
+        url.pathname === "/api/admin/gps-import";
       const authenticatedUser = protectedPath
         ? await authenticate(request, env, context)
         : null;
@@ -654,6 +662,58 @@ export default {
           );
         } else {
           response = json(await getAdminStats(env), 200, origin);
+        }
+      } else if (
+        (request.method === "GET" || request.method === "POST") &&
+        url.pathname === "/api/admin/gps-import"
+      ) {
+        if (!isAdminEmail(authenticatedUser?.email)) {
+          response = json({ error: "K této části nemáte přístup." }, 403, origin);
+        } else if (!useFirestore(env)) {
+          response = json(
+            { error: "Import vyžaduje úložiště Firestore." },
+            503,
+            origin,
+          );
+        } else if (!env.GOOGLE_LOG_URL || !env.GOOGLE_LOG_TOKEN) {
+          response = json(
+            { error: "Import není propojený s tabulkou Google Sheets." },
+            503,
+            origin,
+          );
+        } else if (request.method === "GET") {
+          response = json({ job: await getGpsImportJob(env) }, 200, origin);
+        } else {
+          const body = (await request.json().catch(() => ({}))) as {
+            reset?: boolean;
+          };
+          try {
+            const job = await executeGpsImportStep(
+              env,
+              authenticatedUser?.email || "",
+              body.reset === true,
+              async () =>
+                (await googleRequest<GpsImportReadBatch>(
+                  env,
+                  "gpsImportReadBatch",
+                  { limit: 25 },
+                )) as GpsImportReadBatch,
+              async (rows) =>
+                (await googleRequest<GpsImportArchiveResult>(
+                  env,
+                  "gpsImportArchiveBatch",
+                  { rows },
+                )) as GpsImportArchiveResult,
+            );
+            response = json({ job }, 200, origin);
+          } catch (error) {
+            if (!(error instanceof GpsImportBusyError)) throw error;
+            response = json(
+              { error: "Import právě zpracovává jiný požadavek." },
+              409,
+              origin,
+            );
+          }
         }
       } else if (request.method === "GET" && url.pathname === "/api/geocode") {
         response = await geocode(url, origin, analytics);

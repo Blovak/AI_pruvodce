@@ -136,3 +136,7 @@ jako historie a migrační záloha. Nové uživatelské rozhraní MP3 nenabízí
 negeneruje. Firestore servisní účet, `AUTH_SECRET` i Apps Script token jsou
 pouze v serverových secrets. Podrobný postup je v
 [`FIRESTORE_MIGRATION.md`](FIRESTORE_MIGRATION.md).
+
+Administrátor může v záložce `Import GPS` spustit dávkový import bodů z
+propojené Google tabulky. Průběh se ukládá do Firestore, takže import lze po
+přerušení bezpečně obnovit. Zpracované řádky se přesouvají do listu `Backup`.

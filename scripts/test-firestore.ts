@@ -11,6 +11,11 @@ import {
   saveCachedGuide,
   verifyAuthCode,
 } from "../lib/firestore-storage";
+import {
+  importGpsRows,
+  normalizeImportedGuide,
+  parseGpsDescription,
+} from "../lib/admin-gps-import";
 
 Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 
@@ -208,6 +213,95 @@ try {
   assert.equal(adminStats.positions[0].place, "Staroměstské náměstí");
   assert.equal(adminStats.positions[0].latitude, 50.0875);
   assert.equal(adminStats.positions[0].createdByEmail, email);
+
+  const point = {
+    id: 101,
+    location: "Testovací hrad",
+    coordinates: { latitude: 49.1, longitude: 15.2 },
+    overview: "Stručný přehled.",
+    story: "Příběh místa.",
+    era: "středověk",
+    interestingFacts: ["První", "Druhý", "Třetí"],
+    sourceUrls: ["https://example.com/source"],
+  };
+  const description = JSON.stringify({ points: [point] });
+  const duplicateDescription = JSON.stringify({
+    points: [{ ...point, id: 102, coordinates: { latitude: 49.2, longitude: 15.3 } }],
+  });
+  assert.equal(
+    parseGpsDescription(description)?.key,
+    parseGpsDescription(duplicateDescription)?.key,
+  );
+  assert.equal(normalizeImportedGuide(point)?.placeName, "Testovací hrad");
+
+  const imported = await importGpsRows(
+    env,
+    {
+      ok: true,
+      previousDescription: "",
+      hasMore: false,
+      sourceRows: 4,
+      backupRows: 0,
+      rows: [
+        {
+          rowNumber: 2,
+          pointId: "101",
+          latitude: 49.1,
+          longitude: 15.2,
+          description,
+          descriptionHash: "hash-1",
+        },
+        {
+          rowNumber: 3,
+          pointId: "102",
+          latitude: 49.2,
+          longitude: 15.3,
+          description: duplicateDescription,
+          descriptionHash: "hash-2",
+        },
+        {
+          rowNumber: 4,
+          pointId: "103",
+          latitude: 999,
+          longitude: 15.4,
+          description,
+          descriptionHash: "hash-3",
+        },
+        {
+          rowNumber: 5,
+          pointId: "104",
+          latitude: 49.4,
+          longitude: 15.5,
+          description: JSON.stringify({
+            points: [
+              {
+                ...point,
+                id: 104,
+                location: "Druhé místo",
+                overview: "Jiný přehled.",
+              },
+            ],
+          }),
+          descriptionHash: "hash-4",
+        },
+      ],
+    },
+    "admin@example.com",
+  );
+  assert.deepEqual(imported.counts, {
+    processed: 4,
+    created: 2,
+    duplicates: 1,
+    invalid: 1,
+    existingCompatible: 0,
+    alreadyImported: 0,
+    archived: 0,
+  });
+  assert.equal(imported.archiveRows.length, 4);
+  assert.equal(
+    [...documents.keys()].filter((path) => path.startsWith("guideCache/")).length,
+    3,
+  );
   console.log("Firestore storage tests passed.");
 } finally {
   globalThis.fetch = originalFetch;

@@ -130,6 +130,26 @@ try {
   );
   assert.equal(firestoreRequired.status, 503);
 
+  const forbiddenImport = await worker.fetch(
+    new Request("https://mistopis.test/api/admin/gps-import", {
+      headers: { Authorization: `Bearer ${deviceToken}` },
+    }),
+    env,
+    context,
+  );
+  assert.equal(forbiddenImport.status, 403);
+
+  const firestoreImportRequired = await worker.fetch(
+    new Request("https://mistopis.test/api/admin/gps-import", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ reset: true }),
+    }),
+    env,
+    context,
+  );
+  assert.equal(firestoreImportRequired.status, 503);
+
   console.log("Email authentication worker tests passed.");
 } finally {
   globalThis.fetch = originalFetch;

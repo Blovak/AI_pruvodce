@@ -19,6 +19,13 @@ const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_MAX_REQUESTS_PER_WINDOW = 3;
 const AUTH_MAX_GLOBAL_REQUESTS_PER_WINDOW = 60;
 const AUTH_MAX_CODE_ATTEMPTS = 5;
+const GPS_IMPORT_SPREADSHEET_ID =
+  "12o4RK-G9oCxYeDgDehyeTkSusKp8qU61F6yLH0c55j0";
+const GPS_IMPORT_SOURCE_SHEET = "GPS body";
+const GPS_IMPORT_BACKUP_SHEET = "Backup";
+const GPS_IMPORT_COLUMNS = 7;
+const GPS_IMPORT_MAX_BATCH = 100;
+const GPS_IMPORT_SCAN_ROWS = 5000;
 
 const USAGE_HEADERS = [
   "Čas",
@@ -173,6 +180,10 @@ function doPost(event) {
         return json_(sendAuthCodeEmail_(payload));
       case "migrationExport":
         return json_(migrationExport_(spreadsheetId, payload));
+      case "gpsImportReadBatch":
+        return json_(gpsImportReadBatch_(payload));
+      case "gpsImportArchiveBatch":
+        return json_(gpsImportArchiveBatch_(payload));
       default: {
         const item = normalizeEvent_(payload.event || {});
         writeEvent_(item, spreadsheetId);
@@ -183,6 +194,236 @@ function doPost(event) {
     console.error(error);
     return json_({ ok: false, error: "invalid_request" });
   }
+}
+
+function gpsImportReadBatch_(payload) {
+  const limit = Math.min(
+    GPS_IMPORT_MAX_BATCH,
+    Math.max(1, Math.floor(Number(payload.limit) || GPS_IMPORT_MAX_BATCH)),
+  );
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(GPS_IMPORT_SPREADSHEET_ID);
+    const source = spreadsheet.getSheetByName(GPS_IMPORT_SOURCE_SHEET);
+    if (!source) return { ok: false, error: "gps_import_source_missing" };
+    const backup = ensureGpsBackupSheet_(spreadsheet, source);
+    const rows = [];
+    const lastRow = source.getLastRow();
+    let scannedToEnd = true;
+
+    for (
+      let startRow = 2;
+      startRow <= lastRow && rows.length < limit;
+      startRow += GPS_IMPORT_SCAN_ROWS
+    ) {
+      const count = Math.min(GPS_IMPORT_SCAN_ROWS, lastRow - startRow + 1);
+      const values = source
+        .getRange(startRow, 1, count, GPS_IMPORT_COLUMNS)
+        .getValues();
+      for (let index = 0; index < values.length; index += 1) {
+        const row = values[index];
+        const description = String(row[5] || "").trim();
+        const processed = String(row[6] || "").trim().toLowerCase() === "true";
+        if (!description || processed) continue;
+        rows.push({
+          rowNumber: startRow + index,
+          pointId: cleanText_(row[0], 80),
+          latitude: row[1],
+          longitude: row[2],
+          description: description,
+          descriptionHash: sha256Text_(description),
+        });
+        if (rows.length >= limit) {
+          scannedToEnd = startRow + index >= lastRow;
+          break;
+        }
+      }
+    }
+
+    const backupLastRow = backup.getLastRow();
+    const previousDescription =
+      backupLastRow >= 2
+        ? String(backup.getRange(backupLastRow, 6).getValue() || "")
+        : "";
+    return {
+      ok: true,
+      rows: rows,
+      previousDescription: previousDescription,
+      hasMore: rows.length >= limit && !scannedToEnd,
+      sourceRows: Math.max(lastRow - 1, 0),
+      backupRows: Math.max(backupLastRow - 1, 0),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function gpsImportArchiveBatch_(payload) {
+  const requested = Array.isArray(payload.rows)
+    ? payload.rows.slice(0, GPS_IMPORT_MAX_BATCH)
+    : [];
+  if (!requested.length) {
+    return { ok: true, archived: 0, deleted: 0, alreadyBackedUp: 0 };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const spreadsheet = SpreadsheetApp.openById(GPS_IMPORT_SPREADSHEET_ID);
+    const source = spreadsheet.getSheetByName(GPS_IMPORT_SOURCE_SHEET);
+    if (!source) return { ok: false, error: "gps_import_source_missing" };
+    const backup = ensureGpsBackupSheet_(spreadsheet, source);
+    const validated = [];
+    const seenPointIds = {};
+
+    requested.forEach(function (item) {
+      const rowNumber = Math.floor(Number(item.rowNumber));
+      const pointId = cleanText_(item.pointId, 80);
+      const expectedHash = cleanText_(item.descriptionHash, 100);
+      if (
+        !pointId ||
+        seenPointIds[pointId] ||
+        rowNumber < 2 ||
+        rowNumber > source.getLastRow()
+      ) {
+        return;
+      }
+      const values = source
+        .getRange(rowNumber, 1, 1, GPS_IMPORT_COLUMNS)
+        .getValues()[0];
+      const description = String(values[5] || "").trim();
+      if (
+        String(values[0] || "").trim() !== pointId ||
+        !safeEqual_(sha256Text_(description), expectedHash)
+      ) {
+        throw new Error(`gps_import_source_changed:${pointId}`);
+      }
+      values[6] = "True";
+      seenPointIds[pointId] = true;
+      validated.push({ rowNumber: rowNumber, pointId: pointId, values: values });
+    });
+    if (validated.length !== requested.length) {
+      return { ok: false, error: "gps_import_invalid_archive_rows" };
+    }
+
+    const existingIds = {};
+    const backupLastRow = backup.getLastRow();
+    if (backupLastRow >= 2) {
+      backup
+        .getRange(2, 1, backupLastRow - 1, 1)
+        .getDisplayValues()
+        .forEach(function (row) {
+          existingIds[String(row[0] || "").trim()] = true;
+        });
+    }
+    const toAppend = validated.filter(function (item) {
+      return !existingIds[item.pointId];
+    });
+    const appendStart = backupLastRow + 1;
+    if (toAppend.length) {
+      const requiredLastRow = appendStart + toAppend.length - 1;
+      if (requiredLastRow > backup.getMaxRows()) {
+        backup.insertRowsAfter(
+          backup.getMaxRows(),
+          requiredLastRow - backup.getMaxRows(),
+        );
+      }
+      backup
+        .getRange(appendStart, 1, toAppend.length, GPS_IMPORT_COLUMNS)
+        .setValues(
+          toAppend.map(function (item) {
+            return item.values;
+          }),
+        );
+      SpreadsheetApp.flush();
+      const written = backup
+        .getRange(appendStart, 1, toAppend.length, GPS_IMPORT_COLUMNS)
+        .getValues();
+      for (let index = 0; index < written.length; index += 1) {
+        if (!gpsRowsEqual_(written[index], toAppend[index].values)) {
+          throw new Error(`gps_import_backup_mismatch:${toAppend[index].pointId}`);
+        }
+      }
+    }
+
+    const sourceRows = validated
+      .map(function (item) {
+        return item.rowNumber;
+      })
+      .sort(function (left, right) {
+        return right - left;
+      });
+    const runs = [];
+    sourceRows.forEach(function (rowNumber) {
+      const last = runs[runs.length - 1];
+      if (last && rowNumber === last.start - 1) {
+        last.start = rowNumber;
+      } else {
+        runs.push({ start: rowNumber, end: rowNumber });
+      }
+    });
+    runs.forEach(function (run) {
+      source.deleteRows(run.start, run.end - run.start + 1);
+    });
+
+    return {
+      ok: true,
+      archived: validated.length,
+      deleted: validated.length,
+      appended: toAppend.length,
+      alreadyBackedUp: validated.length - toAppend.length,
+      backupRows: Math.max(backup.getLastRow() - 1, 0),
+      sourceRows: Math.max(source.getLastRow() - 1, 0),
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function ensureGpsBackupSheet_(spreadsheet, source) {
+  let backup = spreadsheet.getSheetByName(GPS_IMPORT_BACKUP_SHEET);
+  if (!backup) {
+    backup = spreadsheet.insertSheet(GPS_IMPORT_BACKUP_SHEET);
+    source
+      .getRange(1, 1, 1, GPS_IMPORT_COLUMNS)
+      .copyTo(backup.getRange(1, 1, 1, GPS_IMPORT_COLUMNS));
+    for (let column = 1; column <= GPS_IMPORT_COLUMNS; column += 1) {
+      backup.setColumnWidth(column, source.getColumnWidth(column));
+    }
+  }
+  backup.setFrozenRows(1);
+  return backup;
+}
+
+function sha256Text_(value) {
+  return Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      String(value || ""),
+      Utilities.Charset.UTF_8,
+    ),
+  ).replace(/=+$/g, "");
+}
+
+function gpsRowsEqual_(left, right) {
+  if (
+    !Array.isArray(left) ||
+    !Array.isArray(right) ||
+    left.length !== right.length
+  ) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    const leftValue =
+      left[index] instanceof Date ? left[index].getTime() : String(left[index]);
+    const rightValue =
+      right[index] instanceof Date
+        ? right[index].getTime()
+        : String(right[index]);
+    if (leftValue !== rightValue) return false;
+  }
+  return true;
 }
 
 function authorizeAuthentication() {
