@@ -39,7 +39,9 @@ Import GPS bodů:
 - každý prošlý řádek se po bezpečném zápisu přesune do listu `Backup`, kde má
   `zpracováno = True`, a z původního listu se odstraní,
 - zápis do databáze i archivace jsou opakovatelné; přerušený import lze z
-  administrace spustit znovu bez vytvoření duplicit.
+  administrace spustit znovu bez vytvoření duplicit,
+- jedno spuštění z administrace skládá bezpečné dílčí dávky a zpracuje alespoň
+  3 000 řádků, pokud jich ve zdrojovém listu tolik zbývá.
 
 Soukromí:
 

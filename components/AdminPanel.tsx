@@ -51,6 +51,8 @@ type GpsImportJob = {
   lastError: string;
 };
 
+const GPS_IMPORT_MINIMUM_PER_RUN = 3000;
+
 function dateLabel(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime())
@@ -77,6 +79,8 @@ export function AdminPanel({
   const [importLoading, setImportLoading] = useState(false);
   const [importRunning, setImportRunning] = useState(false);
   const [importError, setImportError] = useState("");
+  const [importRunProcessed, setImportRunProcessed] = useState(0);
+  const [importTargetReached, setImportTargetReached] = useState(false);
   const stopImport = useRef(false);
 
   const loadStats = useCallback(async () => {
@@ -128,7 +132,13 @@ export function AdminPanel({
     stopImport.current = false;
     setImportRunning(true);
     setImportError("");
-    let reset = !importJob || importJob.status === "complete";
+    setImportRunProcessed(0);
+    setImportTargetReached(false);
+    const startsNewJob = !importJob || importJob.status === "complete";
+    const processedAtStart = startsNewJob
+      ? 0
+      : Number(importJob.processed || 0);
+    let reset = startsNewJob;
     try {
       while (!stopImport.current) {
         const response = await fetch(apiUrl("/api/admin/gps-import"), {
@@ -147,8 +157,18 @@ export function AdminPanel({
           throw new Error(data.error || "Import se nepodařilo dokončit.");
         }
         setImportJob(data.job);
+        const processedInRun = Math.max(
+          data.job.processed - processedAtStart,
+          0,
+        );
+        setImportRunProcessed(processedInRun);
         reset = false;
         if (data.job.status === "complete") {
+          await loadStats();
+          break;
+        }
+        if (processedInRun >= GPS_IMPORT_MINIMUM_PER_RUN) {
+          setImportTargetReached(true);
           await loadStats();
           break;
         }
@@ -328,7 +348,8 @@ export function AdminPanel({
                 <p className="admin-import-description">
                   Zpracuje nezpracované řádky z listu GPS body. Shodné sousední
                   popisy přeskočí a všechny prošlé řádky přesune do listu Backup
-                  se stavem True.
+                  se stavem True. Jedno spuštění zpracuje minimálně 3&nbsp;000
+                  řádků, pokud jich ve zdrojovém listu tolik zbývá.
                 </p>
 
                 {importJob ? (
@@ -380,9 +401,11 @@ export function AdminPanel({
                         ? "Import je dokončený."
                         : importJob.status === "error"
                           ? "Poslední dávka skončila chybou; lze bezpečně pokračovat."
-                        : importRunning
-                            ? "Zpracovávám další dávku…"
-                            : "Import je připraven pokračovat."}
+                          : importRunning
+                            ? `Zpracovávám řádky… ${importRunProcessed.toLocaleString("cs-CZ")} / ${GPS_IMPORT_MINIMUM_PER_RUN.toLocaleString("cs-CZ")}`
+                            : importTargetReached
+                              ? "Bylo zpracováno alespoň 3 000 řádků. Import může pokračovat další dávkou."
+                              : "Import je připraven pokračovat."}
                     </span>
                     <small>
                       GPS body: {importJob.sourceRows} · Backup:{" "}

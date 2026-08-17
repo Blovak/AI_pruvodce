@@ -139,4 +139,5 @@ pouze v serverových secrets. Podrobný postup je v
 
 Administrátor může v záložce `Import GPS` spustit dávkový import bodů z
 propojené Google tabulky. Průběh se ukládá do Firestore, takže import lze po
-přerušení bezpečně obnovit. Zpracované řádky se přesouvají do listu `Backup`.
+přerušení bezpečně obnovit. Jedno spuštění zpracuje alespoň 3 000 dostupných
+řádků a zpracované řádky se přesouvají do listu `Backup`.
