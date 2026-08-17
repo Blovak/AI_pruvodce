@@ -73,6 +73,16 @@ export type AdminUser = {
 export type AdminStats = {
   users: AdminUser[];
   positionLookups: number;
+  positions: AdminPosition[];
+};
+
+export type AdminPosition = {
+  id: string;
+  latitude: number;
+  longitude: number;
+  place: string;
+  createdAt: string;
+  createdByEmail: string;
 };
 
 type GuideCache = {
@@ -520,5 +530,28 @@ export async function getAdminStats(env: StorageEnv): Promise<AdminStats> {
       (left, right) =>
         validDate(right.lastLoginAt) - validDate(left.lastLoginAt),
     );
-  return { users, positionLookups: positions.length };
+  const mapPositions = positions
+    .map(({ id, data }) => ({
+      id,
+      latitude: Number(data.latitude),
+      longitude: Number(data.longitude),
+      place: String(data.place || "Neznámé místo"),
+      createdAt: String(data.createdAt || ""),
+      createdByEmail: String(data.createdByEmail || ""),
+    }))
+    .filter(
+      (position) =>
+        Number.isFinite(position.latitude) &&
+        position.latitude >= -90 &&
+        position.latitude <= 90 &&
+        Number.isFinite(position.longitude) &&
+        position.longitude >= -180 &&
+        position.longitude <= 180,
+    );
+
+  return {
+    users,
+    positionLookups: positions.length,
+    positions: mapPositions,
+  };
 }

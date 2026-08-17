@@ -1415,7 +1415,8 @@ button.nearby-item:focus-visible {
   font-size: 25px;
 }
 
-.admin-users-heading button,
+.admin-view-tabs button,
+.admin-refresh,
 .admin-error button {
   padding: 9px 12px;
   display: flex;
@@ -1429,8 +1430,140 @@ button.nearby-item:focus-visible {
   font-weight: 700;
 }
 
-.admin-users-heading button:disabled {
+.admin-refresh:disabled {
   opacity: 0.55;
+}
+
+.admin-view-bar {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.admin-view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-view-tabs button {
+  margin-bottom: -1px;
+  color: var(--forest);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom-color: var(--line);
+}
+
+.admin-view-tabs button.is-active {
+  color: #fff;
+  background: var(--forest);
+  border-color: var(--forest);
+}
+
+.admin-refresh {
+  margin-left: auto;
+  margin-bottom: -1px;
+  color: #fff;
+  background: var(--forest);
+  border-color: var(--forest);
+}
+
+.admin-map-section {
+  min-width: 0;
+}
+
+.admin-points-map-shell {
+  position: relative;
+  height: 430px;
+  margin-top: 14px;
+  overflow: hidden;
+  background: #d4cebd;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.admin-points-map-shell.is-expanded {
+  position: fixed;
+  z-index: 1400;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+body.admin-map-is-expanded {
+  overflow: hidden;
+}
+
+.admin-map-toolbar {
+  position: absolute;
+  z-index: 600;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 11px;
+  color: var(--forest);
+  background: rgba(255, 253, 247, 0.95);
+  border: 1px solid rgba(23, 59, 53, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 5px 18px rgba(17, 31, 28, 0.18);
+  font-size: 12px;
+}
+
+.admin-map-toolbar button {
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  background: var(--forest);
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.admin-map-toolbar button:disabled {
+  opacity: 0.55;
+}
+
+.admin-map-loading {
+  position: absolute;
+  z-index: 550;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--forest);
+  background: #d4cebd;
+}
+
+.admin-map-credit {
+  position: absolute;
+  z-index: 600;
+  right: 8px;
+  bottom: 5px;
+  margin: 0;
+  padding: 2px 5px;
+  color: var(--muted);
+  background: rgba(255, 253, 247, 0.86);
+  border-radius: 3px;
+  font-size: 9px;
+}
+
+.admin-map-popup {
+  display: grid;
+  gap: 4px;
+  color: var(--forest);
+}
+
+.admin-map-popup small {
+  color: var(--muted);
 }
 
 .admin-table-wrap {
@@ -1620,6 +1753,29 @@ button.nearby-item:focus-visible {
 
   .admin-users-heading {
     align-items: flex-start;
+  }
+
+  .admin-view-bar,
+  .admin-view-tabs {
+    flex-wrap: wrap;
+  }
+
+  .admin-refresh {
+    margin-left: 0;
+  }
+
+  .admin-points-map-shell {
+    height: min(480px, 58vh);
+  }
+
+  .admin-map-toolbar {
+    right: 12px;
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .admin-map-toolbar span {
+    align-self: center;
   }
 
   .auth-shell {

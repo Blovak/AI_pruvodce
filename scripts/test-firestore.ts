@@ -204,6 +204,10 @@ try {
   assert.equal(adminStats.users[0].lastLoginAt, recordedSession?.lastLoginAt);
   assert.equal(adminStats.positionLookups, 1);
   assert.equal(adminStats.users[0].newPositions, 1);
+  assert.equal(adminStats.positions.length, 1);
+  assert.equal(adminStats.positions[0].place, "Staroměstské náměstí");
+  assert.equal(adminStats.positions[0].latitude, 50.0875);
+  assert.equal(adminStats.positions[0].createdByEmail, email);
   console.log("Firestore storage tests passed.");
 } finally {
   globalThis.fetch = originalFetch;
