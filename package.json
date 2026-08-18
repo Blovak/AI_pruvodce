@@ -10,6 +10,7 @@
     "build:pages": "node scripts/package-pages.mjs",
     "start": "next start",
     "test:cache": "node scripts/test-cache-radius.mjs",
+    "test:apps-script": "node scripts/test-google-apps-script.mjs",
     "test:auth": "npm run build && node scripts/test-auth.mjs",
     "test:firestore": "node scripts/run-firestore-test.mjs",
     "migrate:firestore": "node scripts/run-firestore-migration.mjs",

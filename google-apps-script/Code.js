@@ -192,7 +192,13 @@ function doPost(event) {
     }
   } catch (error) {
     console.error(error);
-    return json_({ ok: false, error: "invalid_request" });
+    const message = String(error && error.message ? error.message : error);
+    return json_({
+      ok: false,
+      error: /^gps_import_[a-z0-9_:-]+$/i.test(message)
+        ? message
+        : "invalid_request",
+    });
   }
 }
 
@@ -307,18 +313,31 @@ function gpsImportArchiveBatch_(payload) {
       return { ok: false, error: "gps_import_invalid_archive_rows" };
     }
 
-    const existingIds = {};
+    const existingRowsById = {};
     const backupLastRow = backup.getLastRow();
     if (backupLastRow >= 2) {
       backup
         .getRange(2, 1, backupLastRow - 1, 1)
         .getDisplayValues()
-        .forEach(function (row) {
-          existingIds[String(row[0] || "").trim()] = true;
+        .forEach(function (row, index) {
+          const pointId = String(row[0] || "").trim();
+          if (pointId && !existingRowsById[pointId]) {
+            existingRowsById[pointId] = index + 2;
+          }
         });
     }
+    validated.forEach(function (item) {
+      const existingRow = existingRowsById[item.pointId];
+      if (!existingRow) return;
+      const written = backup
+        .getRange(existingRow, 1, 1, GPS_IMPORT_COLUMNS)
+        .getValues()[0];
+      if (!gpsBackupRowMatches_(written, item.values)) {
+        throw new Error(`gps_import_existing_backup_mismatch:${item.pointId}`);
+      }
+    });
     const toAppend = validated.filter(function (item) {
-      return !existingIds[item.pointId];
+      return !existingRowsById[item.pointId];
     });
     const appendStart = backupLastRow + 1;
     if (toAppend.length) {
@@ -341,7 +360,7 @@ function gpsImportArchiveBatch_(payload) {
         .getRange(appendStart, 1, toAppend.length, GPS_IMPORT_COLUMNS)
         .getValues();
       for (let index = 0; index < written.length; index += 1) {
-        if (!gpsRowsEqual_(written[index], toAppend[index].values)) {
+        if (!gpsBackupRowMatches_(written[index], toAppend[index].values)) {
           throw new Error(`gps_import_backup_mismatch:${toAppend[index].pointId}`);
         }
       }
@@ -406,24 +425,28 @@ function sha256Text_(value) {
   ).replace(/=+$/g, "");
 }
 
-function gpsRowsEqual_(left, right) {
+function gpsBackupRowMatches_(written, expected) {
   if (
-    !Array.isArray(left) ||
-    !Array.isArray(right) ||
-    left.length !== right.length
+    !Array.isArray(written) ||
+    !Array.isArray(expected) ||
+    written.length < GPS_IMPORT_COLUMNS ||
+    expected.length < GPS_IMPORT_COLUMNS
   ) {
     return false;
   }
-  for (let index = 0; index < left.length; index += 1) {
-    const leftValue =
-      left[index] instanceof Date ? left[index].getTime() : String(left[index]);
-    const rightValue =
-      right[index] instanceof Date
-        ? right[index].getTime()
-        : String(right[index]);
-    if (leftValue !== rightValue) return false;
-  }
-  return true;
+  const writtenPointId = String(written[0] || "").trim();
+  const expectedPointId = String(expected[0] || "").trim();
+  const writtenDescription = String(written[5] || "").trim();
+  const expectedDescription = String(expected[5] || "").trim();
+  const writtenProcessed = String(written[6] || "").trim().toLowerCase();
+  return (
+    writtenPointId === expectedPointId &&
+    safeEqual_(
+      sha256Text_(writtenDescription),
+      sha256Text_(expectedDescription),
+    ) &&
+    writtenProcessed === "true"
+  );
 }
 
 function authorizeAuthentication() {
