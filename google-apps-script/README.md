@@ -42,6 +42,10 @@ Import GPS bodů:
   administrace spustit znovu bez vytvoření duplicit,
 - jedno spuštění z administrace skládá bezpečné dílčí dávky a zpracuje alespoň
   3 000 řádků, pokud jich ve zdrojovém listu tolik zbývá.
+- webová administrace používá dávky po 25 řádcích kvůli limitu jednoho HTTP
+  požadavku; autorizovaný dlouhý migrační běh může použít až 1 000 řádků a
+  zdroj před archivací ověřuje blokovým čtením se stejnou kontrolou ID a
+  SHA-256 popisu.
 
 Soukromí:
 

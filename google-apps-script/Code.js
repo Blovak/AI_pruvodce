@@ -24,7 +24,7 @@ const GPS_IMPORT_SPREADSHEET_ID =
 const GPS_IMPORT_SOURCE_SHEET = "GPS body";
 const GPS_IMPORT_BACKUP_SHEET = "Backup";
 const GPS_IMPORT_COLUMNS = 7;
-const GPS_IMPORT_MAX_BATCH = 100;
+const GPS_IMPORT_MAX_BATCH = 1000;
 const GPS_IMPORT_SCAN_ROWS = 5000;
 
 const USAGE_HEADERS = [
@@ -282,22 +282,50 @@ function gpsImportArchiveBatch_(payload) {
     const backup = ensureGpsBackupSheet_(spreadsheet, source);
     const validated = [];
     const seenPointIds = {};
+    const seenRowNumbers = {};
+    const sourceLastRow = source.getLastRow();
+    const requestedRowNumbers = [];
+
+    requested.forEach(function (item) {
+      const rowNumber = Math.floor(Number(item.rowNumber));
+      const pointId = cleanText_(item.pointId, 80);
+      if (
+        !pointId ||
+        seenPointIds[pointId] ||
+        seenRowNumbers[rowNumber] ||
+        rowNumber < 2 ||
+        rowNumber > sourceLastRow
+      ) {
+        return;
+      }
+      seenPointIds[pointId] = true;
+      seenRowNumbers[rowNumber] = true;
+      requestedRowNumbers.push(rowNumber);
+    });
+    if (requestedRowNumbers.length !== requested.length) {
+      return { ok: false, error: "gps_import_invalid_archive_rows" };
+    }
+
+    const sourceValuesByRow = {};
+    gpsImportReadBlocks_(requestedRowNumbers).forEach(function (block) {
+      const values = source
+        .getRange(
+          block.start,
+          1,
+          block.end - block.start + 1,
+          GPS_IMPORT_COLUMNS,
+        )
+        .getValues();
+      values.forEach(function (row, index) {
+        sourceValuesByRow[block.start + index] = row;
+      });
+    });
 
     requested.forEach(function (item) {
       const rowNumber = Math.floor(Number(item.rowNumber));
       const pointId = cleanText_(item.pointId, 80);
       const expectedHash = cleanText_(item.descriptionHash, 100);
-      if (
-        !pointId ||
-        seenPointIds[pointId] ||
-        rowNumber < 2 ||
-        rowNumber > source.getLastRow()
-      ) {
-        return;
-      }
-      const values = source
-        .getRange(rowNumber, 1, 1, GPS_IMPORT_COLUMNS)
-        .getValues()[0];
+      const values = sourceValuesByRow[rowNumber];
       const description = String(values[5] || "").trim();
       if (
         String(values[0] || "").trim() !== pointId ||
@@ -306,7 +334,6 @@ function gpsImportArchiveBatch_(payload) {
         throw new Error(`gps_import_source_changed:${pointId}`);
       }
       values[6] = "True";
-      seenPointIds[pointId] = true;
       validated.push({ rowNumber: rowNumber, pointId: pointId, values: values });
     });
     if (validated.length !== requested.length) {
@@ -398,6 +425,22 @@ function gpsImportArchiveBatch_(payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function gpsImportReadBlocks_(rowNumbers) {
+  const sorted = rowNumbers.slice().sort(function (left, right) {
+    return left - right;
+  });
+  const blocks = [];
+  sorted.forEach(function (rowNumber) {
+    const last = blocks[blocks.length - 1];
+    if (last && rowNumber - last.start < GPS_IMPORT_SCAN_ROWS) {
+      last.end = rowNumber;
+    } else {
+      blocks.push({ start: rowNumber, end: rowNumber });
+    }
+  });
+  return blocks;
 }
 
 function ensureGpsBackupSheet_(spreadsheet, source) {
