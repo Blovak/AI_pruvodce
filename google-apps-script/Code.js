@@ -400,6 +400,14 @@ function gpsImportArchiveBatch_(payload) {
       .sort(function (left, right) {
         return right - left;
       });
+    const rowsToInsert = gpsImportRowsToInsert_(
+      source.getMaxRows(),
+      source.getFrozenRows(),
+      sourceRows.length,
+    );
+    if (rowsToInsert > 0) {
+      source.insertRowsAfter(source.getMaxRows(), rowsToInsert);
+    }
     const runs = [];
     sourceRows.forEach(function (rowNumber) {
       const last = runs[runs.length - 1];
@@ -425,6 +433,14 @@ function gpsImportArchiveBatch_(payload) {
   } finally {
     lock.releaseLock();
   }
+}
+
+function gpsImportRowsToInsert_(maxRows, frozenRows, deletionCount) {
+  const minimumRemainingRows = Math.max(Number(frozenRows) + 1, 1);
+  return Math.max(
+    minimumRemainingRows - (Number(maxRows) - Number(deletionCount)),
+    0,
+  );
 }
 
 function gpsImportReadBlocks_(rowNumbers) {

@@ -45,7 +45,9 @@ Import GPS bodů:
 - webová administrace používá dávky po 25 řádcích kvůli limitu jednoho HTTP
   požadavku; autorizovaný dlouhý migrační běh může použít až 1 000 řádků a
   zdroj před archivací ověřuje blokovým čtením se stejnou kontrolou ID a
-  SHA-256 popisu.
+  SHA-256 popisu,
+- před odstraněním posledních datových řádků se případně přidá prázdný řádek,
+  aby ve zdrojovém listu vedle zmrazeného záhlaví zůstala platná datová oblast.
 
 Soukromí:
 

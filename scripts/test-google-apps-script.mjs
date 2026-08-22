@@ -30,11 +30,18 @@ vm.runInContext(
     `  gpsBackupRowMatches_([4834, 50, 14, "", "", "popis", true], [4833, 50, 14, "", "", "popis", "True"]),\n` +
     `  gpsBackupRowMatches_([4833, 50, 14, "", "", "popis", false], [4833, 50, 14, "", "", "popis", "True"])\n` +
     `];\n` +
+    `globalThis.__gpsImportRowsToInsert = [\n` +
+    `  gpsImportRowsToInsert_(2, 1, 1),\n` +
+    `  gpsImportRowsToInsert_(39, 1, 38),\n` +
+    `  gpsImportRowsToInsert_(40, 1, 38),\n` +
+    `  gpsImportRowsToInsert_(1000, 1, 100)\n` +
+    `];\n` +
     `globalThis.__gpsImportReadBlocks = gpsImportReadBlocks_([10002, 3, 4, 5001, 5002, 10001]);`,
   context,
 );
 
 assert.deepEqual([...context.__gpsBackupChecks], [true, false, false, false]);
+assert.deepEqual([...context.__gpsImportRowsToInsert], [1, 1, 0, 0]);
 assert.deepEqual(
   Array.from(context.__gpsImportReadBlocks, (block) => ({ ...block })),
   [
