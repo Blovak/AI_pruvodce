@@ -7,6 +7,7 @@ import {
   setDocument,
   sha256,
 } from "./firestore-rest";
+import { normalizeSourceUrls } from "./source-urls";
 
 const JOB_PATH = "adminJobs/gps-import";
 const IMPORT_MODEL = "deepseek-v4-flash:nearby-directions-v1:gps-matrix-import";
@@ -134,7 +135,7 @@ export function normalizeImportedGuide(point: Record<string, unknown>) {
     })),
     nearby: [],
     question: "Co dalšího vás na tomto místě zajímá?",
-    sourceUrls: strings(point.sourceUrls).slice(0, 5),
+    sourceUrls: normalizeSourceUrls(strings(point.sourceUrls)).slice(0, 5),
   };
 }
 

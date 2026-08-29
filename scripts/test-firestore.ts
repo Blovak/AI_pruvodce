@@ -16,6 +16,7 @@ import {
   normalizeImportedGuide,
   parseGpsDescription,
 } from "../lib/admin-gps-import";
+import { normalizeSourceUrls } from "../lib/source-urls";
 
 Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 
@@ -222,7 +223,15 @@ try {
     story: "Příběh místa.",
     era: "středověk",
     interestingFacts: ["První", "Druhý", "Třetí"],
-    sourceUrls: ["https://example.com/source"],
+    sourceUrls: [
+      "https://cs.wikipedia.org/wiki/Testovac%C3%AD_hrad",
+      "javascript:alert(1)",
+      "data:text/html,unsafe",
+      "blob:https://cs.wikipedia.org/id",
+      "/relative-source",
+      "https://example.com/untrusted",
+      "not a url",
+    ],
   };
   const description = JSON.stringify({ points: [point] });
   const duplicateDescription = JSON.stringify({
@@ -233,6 +242,22 @@ try {
     parseGpsDescription(duplicateDescription)?.key,
   );
   assert.equal(normalizeImportedGuide(point)?.placeName, "Testovací hrad");
+  assert.deepEqual(normalizeImportedGuide(point)?.sourceUrls, [
+    "https://cs.wikipedia.org/wiki/Testovac%C3%AD_hrad",
+  ]);
+  assert.deepEqual(
+    normalizeSourceUrls([
+      "https://cs.wikipedia.org/wiki/Validn%C3%AD_zdroj",
+      "https://cs.wikipedia.org/wiki/Validn%C3%AD_zdroj",
+      "javascript:alert(1)",
+      "data:text/html,unsafe",
+      "blob:https://cs.wikipedia.org/id",
+      "/relative-source",
+      "not a url",
+      "https://example.com/untrusted",
+    ]),
+    ["https://cs.wikipedia.org/wiki/Validn%C3%AD_zdroj"],
+  );
 
   const imported = await importGpsRows(
     env,

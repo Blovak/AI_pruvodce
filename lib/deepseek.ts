@@ -1,4 +1,5 @@
 import type { GuideContent } from "./types";
+import { normalizeSourceUrls } from "./source-urls";
 
 const DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
@@ -248,7 +249,7 @@ function normalizeGuide(
     facts: normalizedFacts,
     nearby: normalizeNearby(nearby, sources, origin),
     question: text(raw.question, "Co dalšího vás na tomto místě zajímá?"),
-    sourceUrls: sources.slice(0, 5).map((source) => source.url),
+    sourceUrls: normalizeSourceUrls(sources.slice(0, 5).map((source) => source.url)),
   };
 }
 

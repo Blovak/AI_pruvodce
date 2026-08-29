@@ -33,6 +33,7 @@ import { AdminPanel } from "@/components/AdminPanel";
 import { apiUrl } from "@/lib/api-url";
 import { isAdminEmail } from "@/lib/admin";
 import { getSessionHeaders } from "@/lib/session";
+import { normalizeSourceUrls } from "@/lib/source-urls";
 
 type Status = "idle" | "locating" | "loading" | "ready" | "error";
 
@@ -484,6 +485,7 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
     (item) =>
       Number.isFinite(item.latitude) && Number.isFinite(item.longitude),
   );
+  const sourceUrls = normalizeSourceUrls(guide.sourceUrls);
 
   return (
     <main className="app-shell">
@@ -713,13 +715,13 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
                   </section>
                 )}
 
-                {guide.sourceUrls.length > 0 && (
+                {sourceUrls.length > 0 && (
                   <details className="sources">
                     <summary>
                       Zdroje a další čtení <ChevronDown size={16} />
                     </summary>
                     <ul>
-                      {guide.sourceUrls.map((url) => (
+                      {sourceUrls.map((url) => (
                         <li key={url}>
                           <a href={url} rel="noreferrer" target="_blank">
                             {new URL(url).hostname.replace("www.", "")}
