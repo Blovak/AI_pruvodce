@@ -6,7 +6,8 @@ hlasu telefonu nebo počítače.
 
 ## Co aplikace umí
 
-- získat přesnou polohu z prohlížeče nebo vyhledat místo ručně,
+- po otevření automaticky získat aktuální polohu a načíst její výklad,
+- vyhledat jiné místo ručně nebo je vybrat na mapě,
 - přihlásit uživatele šestimístným kódem poslaným na e-mail a zapamatovat
   zařízení po dobu 180 dní,
 - zobrazit okolí na mapě OpenStreetMap,

@@ -360,6 +360,12 @@ export function GuideApp({ userEmail, onLogout }: GuideAppProps) {
     );
   }
 
+  useEffect(() => {
+    locate();
+    // Úvodní polohu načítáme pouze při otevření přihlášené aplikace.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function stopSystemSpeech() {
     speechRunRef.current += 1;
     window.speechSynthesis?.cancel();
