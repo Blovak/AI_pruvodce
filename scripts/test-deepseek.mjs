@@ -135,6 +135,32 @@ assert.deepEqual(guide.nearby, [
 assert.equal(guide.cache.hit, false);
 assert.equal(analyticsEvent.userEmail, "test@example.com");
 
+const automaticLocationResponse = await worker.fetch(
+  new Request("https://worker.example/api/guide", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      latitude: 50.0875,
+      longitude: 14.4213,
+      label: "Aktuální poloha",
+    }),
+  }),
+  {
+    DEEPSEEK_API_KEY: "test-key",
+    GOOGLE_LOG_URL: googleStorageUrl,
+    GOOGLE_LOG_TOKEN: "storage-secret",
+  },
+  context,
+);
+await Promise.all(backgroundTasks.splice(0));
+assert.equal(automaticLocationResponse.status, 200);
+assert.equal(cacheGetRequest.latitude, 50.0875);
+assert.equal(cacheGetRequest.longitude, 14.4213);
+assert.equal(cacheGetRequest.maxDistanceMeters, 50);
+
 const legacySpeech = await worker.fetch(
   new Request("https://worker.example/api/speech", {
     method: "POST",

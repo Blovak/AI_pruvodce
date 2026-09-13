@@ -73,7 +73,7 @@ type CachedGuide = {
   distanceMeters?: number;
 };
 
-const GUIDE_CACHE_RADIUS_METERS = 800;
+const GUIDE_CACHE_RADIUS_METERS = 50;
 const GUIDE_CACHE_FORMAT = "nearby-directions-v1";
 
 const allowedOrigins = new Set([

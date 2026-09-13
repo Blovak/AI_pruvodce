@@ -83,7 +83,7 @@ Po nasazení `/api/health` vrátí:
 ```
 
 Ověřte žádost o OTP, ověření kódu, obnovení staré relace, odhlášení, přesnou
-cache, cache do 800 metrů a nový výklad. Současně ověřte, že v listu `Použití`
+cache, cache do 50 metrů a nový výklad. Současně ověřte, že v listu `Použití`
 dál přibývají řádky. Zápis analytiky běží přes `waitUntil`, takže odpověď
 uživateli na Google Sheets nečeká.
 

@@ -63,28 +63,28 @@ function sheet(rows) {
 
 const latitude = 50;
 const longitude = 14;
-const degreesFor800Meters =
-  (800 / EARTH_RADIUS_METERS) * (180 / Math.PI);
+const degreesFor50Meters =
+  (50 / EARTH_RADIUS_METERS) * (180 / Math.PI);
 
 assert.ok(
   Math.abs(
     haversineMeters_(
       latitude,
       longitude,
-      latitude + degreesFor800Meters,
+      latitude + degreesFor50Meters,
       longitude,
-    ) - 800,
+    ) - 50,
   ) < 0.001,
 );
 
 const nearest = findNearestValidCacheRow_(
   sheet([
-    row({ key: "far", latitude: 50.006, longitude }),
-    row({ key: "near", latitude: 50.002, longitude }),
+    row({ key: "far", latitude: 50.0004, longitude }),
+    row({ key: "near", latitude: 50.0002, longitude }),
   ]),
   latitude,
   longitude,
-  800,
+  50,
   false,
 );
 assert.equal(nearest.values[2], "near");
@@ -93,13 +93,13 @@ const boundary = findNearestValidCacheRow_(
   sheet([
     row({
       key: "boundary",
-      latitude: latitude + degreesFor800Meters,
+      latitude: latitude + degreesFor50Meters,
       longitude,
     }),
   ]),
   latitude,
   longitude,
-  800,
+  50,
   false,
 );
 assert.equal(boundary.values[2], "boundary");
@@ -108,13 +108,13 @@ const outside = findNearestValidCacheRow_(
   sheet([
     row({
       key: "outside",
-      latitude: latitude + degreesFor800Meters * 1.01,
+      latitude: latitude + degreesFor50Meters * 1.01,
       longitude,
     }),
   ]),
   latitude,
   longitude,
-  800,
+  50,
   false,
 );
 assert.equal(outside, null);
@@ -137,7 +137,7 @@ const filtered = findNearestValidCacheRow_(
   ]),
   latitude,
   longitude,
-  800,
+  50,
   false,
 );
 assert.equal(filtered.values[2], "valid");
@@ -154,7 +154,7 @@ const audioOnly = findNearestValidCacheRow_(
   ]),
   latitude,
   longitude,
-  800,
+  50,
   true,
 );
 assert.equal(audioOnly.values[2], "with-audio");
@@ -176,7 +176,7 @@ const deepSeekOnly = findNearestValidCacheRow_(
   ]),
   latitude,
   longitude,
-  800,
+  50,
   false,
   "deepseek-",
 );
